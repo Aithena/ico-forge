@@ -22,7 +22,8 @@ export default function App() {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
   const [preset, setPreset] = useState<PresetId>('app')
   const [include48, setInclude48] = useState(false)
-  const [fit, setFit] = useState<FitMode>('contain')
+  const [fit, setFit] = useState<FitMode>('cover')
+  const [trim, setTrim] = useState(true)
   const [previews, setPreviews] = useState<Preview[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -30,6 +31,7 @@ export default function App() {
   const [, startTransition] = useTransition()
 
   const sizes = resolveSizes(preset, include48)
+  const renderOptions = { fit, trim }
 
   useEffect(() => {
     if (!file) {
@@ -44,7 +46,7 @@ export default function App() {
     let cancelled = false
     setError(null)
 
-    makePreviewDataUrls(file, sizes, fit)
+    makePreviewDataUrls(file, sizes, renderOptions)
       .then((next) => {
         if (!cancelled) setPreviews(next)
       })
@@ -59,7 +61,7 @@ export default function App() {
       cancelled = true
       URL.revokeObjectURL(url)
     }
-  }, [file, sizes.join(','), fit])
+  }, [file, sizes.join(','), fit, trim])
 
   function acceptFile(next: File | undefined | null) {
     if (!next) return
@@ -78,7 +80,7 @@ export default function App() {
     setBusy(true)
     setError(null)
     try {
-      const blob = await encodeIco(file, sizes, fit)
+      const blob = await encodeIco(file, sizes, renderOptions)
       downloadBlob(blob, `${stemFromName(file.name)}.ico`)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '生成失败')
@@ -187,16 +189,27 @@ export default function App() {
               </label>
             )}
 
-            <label className="fit">
-              <span>适配</span>
-              <select
-                value={fit}
-                onChange={(e) => setFit(e.target.value as FitMode)}
-              >
-                <option value="contain">完整放入（留白）</option>
-                <option value="cover">居中裁切</option>
-              </select>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={trim}
+                onChange={(e) => setTrim(e.target.checked)}
+              />
+              <span>去除透明边距（推荐）</span>
             </label>
+
+            {!trim && (
+              <label className="fit">
+                <span>适配</span>
+                <select
+                  value={fit}
+                  onChange={(e) => setFit(e.target.value as FitMode)}
+                >
+                  <option value="cover">铺满裁切</option>
+                  <option value="contain">完整放入（留白）</option>
+                </select>
+              </label>
+            )}
           </div>
         </section>
 

@@ -1,5 +1,13 @@
 export type FitMode = 'contain' | 'cover'
 
+export interface RenderOptions {
+  fit?: FitMode
+  /** Crop away transparent margins before scaling. Default true. */
+  trim?: boolean
+}
+
+type Bounds = { x: number; y: number; w: number; h: number }
+
 function loadImage(source: Blob | string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
@@ -13,27 +21,116 @@ function loadImage(source: Blob | string): Promise<HTMLImageElement> {
   })
 }
 
+/** Find opaque pixel bounding box; returns full frame if fully opaque/empty. */
+function findContentBounds(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): Bounds {
+  const { data } = ctx.getImageData(0, 0, width, height)
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const alpha = data[(y * width + x) * 4 + 3]
+      if (alpha > 8) {
+        if (x < minX) minX = x
+        if (y < minY) minY = y
+        if (x > maxX) maxX = x
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return { x: 0, y: 0, w: width, h: height }
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    w: maxX - minX + 1,
+    h: maxY - minY + 1,
+  }
+}
+
+function squareSourceRect(bounds: Bounds, imgW: number, imgH: number): Bounds {
+  const side = Math.max(bounds.w, bounds.h)
+  let x = Math.floor(bounds.x + bounds.w / 2 - side / 2)
+  let y = Math.floor(bounds.y + bounds.h / 2 - side / 2)
+
+  x = Math.max(0, Math.min(x, imgW - side))
+  y = Math.max(0, Math.min(y, imgH - side))
+
+  // If content is near an edge and side > remaining space, clamp side.
+  const w = Math.min(side, imgW - x)
+  const h = Math.min(side, imgH - y)
+  const sideClamped = Math.min(w, h)
+
+  return { x, y, w: sideClamped, h: sideClamped }
+}
+
+function prepareSourceCanvas(
+  img: HTMLImageElement,
+  trim: boolean,
+): { canvas: HTMLCanvasElement; sx: number; sy: number; sw: number; sh: number } {
+  const width = img.naturalWidth
+  const height = img.naturalHeight
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) throw new Error('Canvas 不可用')
+  ctx.drawImage(img, 0, 0)
+
+  if (!trim) {
+    return { canvas, sx: 0, sy: 0, sw: width, sh: height }
+  }
+
+  const bounds = findContentBounds(ctx, width, height)
+  const square = squareSourceRect(bounds, width, height)
+  return {
+    canvas,
+    sx: square.x,
+    sy: square.y,
+    sw: square.w,
+    sh: square.h,
+  }
+}
+
 function drawFitted(
   ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
+  source: HTMLCanvasElement,
+  sx: number,
+  sy: number,
+  sw: number,
+  sh: number,
   size: number,
   fit: FitMode,
 ) {
   ctx.clearRect(0, 0, size, size)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+
+  // After trim, content is usually square — fill the icon directly.
+  if (sw === sh) {
+    ctx.drawImage(source, sx, sy, sw, sh, 0, 0, size, size)
+    return
+  }
 
   const scale =
     fit === 'cover'
-      ? Math.max(size / img.naturalWidth, size / img.naturalHeight)
-      : Math.min(size / img.naturalWidth, size / img.naturalHeight)
+      ? Math.max(size / sw, size / sh)
+      : Math.min(size / sw, size / sh)
 
-  const w = img.naturalWidth * scale
-  const h = img.naturalHeight * scale
+  const w = sw * scale
+  const h = sh * scale
   const x = (size - w) / 2
   const y = (size - h) / 2
-
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(img, x, y, w, h)
+  ctx.drawImage(source, sx, sy, sw, sh, x, y, w, h)
 }
 
 async function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
@@ -46,17 +143,29 @@ async function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer())
 }
 
+function normalizeOptions(options?: FitMode | RenderOptions): RenderOptions {
+  if (typeof options === 'string' || options == null) {
+    return { fit: options ?? 'cover', trim: true }
+  }
+  return {
+    fit: options.fit ?? 'cover',
+    trim: options.trim ?? true,
+  }
+}
+
 /** Build a multi-size ICO with PNG payloads (Vista+ / modern browsers). */
 export async function encodeIco(
   source: Blob,
   sizes: number[],
-  fit: FitMode = 'contain',
+  options?: FitMode | RenderOptions,
 ): Promise<Blob> {
+  const { fit, trim } = normalizeOptions(options)
   const uniqueSizes = [...new Set(sizes)].sort((a, b) => a - b)
   const objectUrl = URL.createObjectURL(source)
 
   try {
     const img = await loadImage(objectUrl)
+    const prepared = prepareSourceCanvas(img, trim ?? true)
     const pngs: Uint8Array[] = []
 
     for (const size of uniqueSizes) {
@@ -65,7 +174,16 @@ export async function encodeIco(
       canvas.height = size
       const ctx = canvas.getContext('2d')
       if (!ctx) throw new Error('Canvas 不可用')
-      drawFitted(ctx, img, size, fit)
+      drawFitted(
+        ctx,
+        prepared.canvas,
+        prepared.sx,
+        prepared.sy,
+        prepared.sw,
+        prepared.sh,
+        size,
+        fit ?? 'cover',
+      )
       pngs.push(await canvasToPng(canvas))
     }
 
@@ -113,11 +231,13 @@ export async function encodeIco(
 export async function makePreviewDataUrls(
   source: Blob,
   sizes: number[],
-  fit: FitMode = 'contain',
+  options?: FitMode | RenderOptions,
 ): Promise<{ size: number; url: string }[]> {
+  const { fit, trim } = normalizeOptions(options)
   const objectUrl = URL.createObjectURL(source)
   try {
     const img = await loadImage(objectUrl)
+    const prepared = prepareSourceCanvas(img, trim ?? true)
     const results: { size: number; url: string }[] = []
 
     for (const size of sizes) {
@@ -126,7 +246,16 @@ export async function makePreviewDataUrls(
       canvas.height = size
       const ctx = canvas.getContext('2d')
       if (!ctx) throw new Error('Canvas 不可用')
-      drawFitted(ctx, img, size, fit)
+      drawFitted(
+        ctx,
+        prepared.canvas,
+        prepared.sx,
+        prepared.sy,
+        prepared.sw,
+        prepared.sh,
+        size,
+        fit ?? 'cover',
+      )
       results.push({ size, url: canvas.toDataURL('image/png') })
     }
 
