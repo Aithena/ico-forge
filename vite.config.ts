@@ -5,4 +5,12 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: '/ico-forge/',
   plugins: [react()],
+  server: {
+    port: 18808,
+    strictPort: true,
+  },
+  preview: {
+    port: 18808,
+    strictPort: true,
+  },
 })

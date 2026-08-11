@@ -6,6 +6,12 @@ export interface RenderOptions {
   trim?: boolean
 }
 
+export interface IcoEntryInfo {
+  size: number
+  bytes: number
+  format: 'png' | 'bmp' | 'unknown'
+}
+
 type Bounds = { x: number; y: number; w: number; h: number }
 
 function loadImage(source: Blob | string): Promise<HTMLImageElement> {
@@ -65,7 +71,6 @@ function squareSourceRect(bounds: Bounds, imgW: number, imgH: number): Bounds {
   x = Math.max(0, Math.min(x, imgW - side))
   y = Math.max(0, Math.min(y, imgH - side))
 
-  // If content is near an edge and side > remaining space, clamp side.
   const w = Math.min(side, imgW - x)
   const h = Math.min(side, imgH - y)
   const sideClamped = Math.min(w, h)
@@ -115,7 +120,6 @@ function drawFitted(
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
 
-  // After trim, content is usually square — fill the icon directly.
   if (sw === sh) {
     ctx.drawImage(source, sx, sy, sw, sh, 0, 0, size, size)
     return
@@ -145,28 +149,77 @@ async function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
 
 function normalizeOptions(options?: FitMode | RenderOptions): RenderOptions {
   if (typeof options === 'string' || options == null) {
-    return { fit: options ?? 'cover', trim: true }
+    return { fit: options ?? 'cover', trim: false }
   }
   return {
     fit: options.fit ?? 'cover',
-    trim: options.trim ?? true,
+    trim: options.trim ?? false,
   }
 }
 
-/** Build a multi-size ICO with PNG payloads (Vista+ / modern browsers). */
-export async function encodeIco(
+function isPng(data: Uint8Array): boolean {
+  return (
+    data.length >= 8 &&
+    data[0] === 0x89 &&
+    data[1] === 0x50 &&
+    data[2] === 0x4e &&
+    data[3] === 0x47
+  )
+}
+
+/** Assemble multi-size ICO. PNG payloads use planes/bitcount = 0 (ICO/PNG spec). */
+export function buildIco(images: { size: number; data: Uint8Array }[]): Blob {
+  const count = images.length
+  const headerSize = 6
+  const entrySize = 16
+  const dataOffset = headerSize + entrySize * count
+
+  let total = dataOffset
+  for (const image of images) total += image.data.length
+
+  const bytes = new Uint8Array(total)
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+
+  view.setUint16(0, 0, true)
+  view.setUint16(2, 1, true)
+  view.setUint16(4, count, true)
+
+  let offset = dataOffset
+  for (let i = 0; i < count; i++) {
+    const { size, data } = images[i]!
+    const entry = headerSize + i * entrySize
+    const png = isPng(data)
+
+    view.setUint8(entry, size >= 256 ? 0 : size)
+    view.setUint8(entry + 1, size >= 256 ? 0 : size)
+    view.setUint8(entry + 2, 0)
+    view.setUint8(entry + 3, 0)
+    // PNG-in-ICO requires 0/0; BMP uses 1/32
+    view.setUint16(entry + 4, png ? 0 : 1, true)
+    view.setUint16(entry + 6, png ? 0 : 32, true)
+    view.setUint32(entry + 8, data.length, true)
+    view.setUint32(entry + 12, offset, true)
+
+    bytes.set(data, offset)
+    offset += data.length
+  }
+
+  return new Blob([bytes], { type: 'application/octet-stream' })
+}
+
+async function renderSizeCanvases(
   source: Blob,
   sizes: number[],
   options?: FitMode | RenderOptions,
-): Promise<Blob> {
+): Promise<{ size: number; canvas: HTMLCanvasElement }[]> {
   const { fit, trim } = normalizeOptions(options)
-  const uniqueSizes = [...new Set(sizes)].sort((a, b) => a - b)
+  const uniqueSizes = [...new Set(sizes)].sort((a, b) => b - a) // largest first
   const objectUrl = URL.createObjectURL(source)
 
   try {
     const img = await loadImage(objectUrl)
     const prepared = prepareSourceCanvas(img, trim ?? true)
-    const pngs: Uint8Array[] = []
+    const frames: { size: number; canvas: HTMLCanvasElement }[] = []
 
     for (const size of uniqueSizes) {
       const canvas = document.createElement('canvas')
@@ -184,48 +237,29 @@ export async function encodeIco(
         size,
         fit ?? 'cover',
       )
-      pngs.push(await canvasToPng(canvas))
+      frames.push({ size, canvas })
     }
 
-    const count = pngs.length
-    const headerSize = 6
-    const entrySize = 16
-    const dataOffset = headerSize + entrySize * count
-
-    let total = dataOffset
-    for (const png of pngs) total += png.length
-
-    const buffer = new ArrayBuffer(total)
-    const view = new DataView(buffer)
-    const bytes = new Uint8Array(buffer)
-
-    view.setUint16(0, 0, true) // reserved
-    view.setUint16(2, 1, true) // ICO
-    view.setUint16(4, count, true)
-
-    let offset = dataOffset
-    for (let i = 0; i < count; i++) {
-      const size = uniqueSizes[i]
-      const png = pngs[i]
-      const entry = headerSize + i * entrySize
-
-      view.setUint8(entry, size >= 256 ? 0 : size)
-      view.setUint8(entry + 1, size >= 256 ? 0 : size)
-      view.setUint8(entry + 2, 0)
-      view.setUint8(entry + 3, 0)
-      view.setUint16(entry + 4, 1, true)
-      view.setUint16(entry + 6, 32, true)
-      view.setUint32(entry + 8, png.length, true)
-      view.setUint32(entry + 12, offset, true)
-
-      bytes.set(png, offset)
-      offset += png.length
-    }
-
-    return new Blob([buffer], { type: 'image/x-icon' })
+    return frames
   } finally {
     URL.revokeObjectURL(objectUrl)
   }
+}
+
+/** Build a multi-size ICO using PNG payloads for every size (Vista+). */
+export async function encodeIco(
+  source: Blob,
+  sizes: number[],
+  options?: FitMode | RenderOptions,
+): Promise<Blob> {
+  const frames = await renderSizeCanvases(source, sizes, options)
+  const images: { size: number; data: Uint8Array }[] = []
+
+  for (const frame of frames) {
+    images.push({ size: frame.size, data: await canvasToPng(frame.canvas) })
+  }
+
+  return buildIco(images)
 }
 
 export async function makePreviewDataUrls(
@@ -233,43 +267,64 @@ export async function makePreviewDataUrls(
   sizes: number[],
   options?: FitMode | RenderOptions,
 ): Promise<{ size: number; url: string }[]> {
-  const { fit, trim } = normalizeOptions(options)
-  const objectUrl = URL.createObjectURL(source)
-  try {
-    const img = await loadImage(objectUrl)
-    const prepared = prepareSourceCanvas(img, trim ?? true)
-    const results: { size: number; url: string }[] = []
+  // Keep preview order small → large for UI
+  const ordered = [...new Set(sizes)].sort((a, b) => a - b)
+  const frames = await renderSizeCanvases(source, ordered, options)
+  const bySize = new Map(frames.map((f) => [f.size, f.canvas]))
 
-    for (const size of sizes) {
-      const canvas = document.createElement('canvas')
-      canvas.width = size
-      canvas.height = size
-      const ctx = canvas.getContext('2d')
-      if (!ctx) throw new Error('Canvas 不可用')
-      drawFitted(
-        ctx,
-        prepared.canvas,
-        prepared.sx,
-        prepared.sy,
-        prepared.sw,
-        prepared.sh,
-        size,
-        fit ?? 'cover',
-      )
-      results.push({ size, url: canvas.toDataURL('image/png') })
-    }
-
-    return results
-  } finally {
-    URL.revokeObjectURL(objectUrl)
-  }
+  return ordered.map((size) => {
+    const canvas = bySize.get(size)!
+    return { size, url: canvas.toDataURL('image/png') }
+  })
 }
 
-export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
+export async function inspectIco(blob: Blob): Promise<IcoEntryInfo[]> {
+  const buf = new Uint8Array(await blob.arrayBuffer())
+  if (buf.length < 6) return []
+
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
+  if (view.getUint16(0, true) !== 0 || view.getUint16(2, true) !== 1) {
+    return []
+  }
+
+  const count = view.getUint16(4, true)
+  const entries: IcoEntryInfo[] = []
+
+  for (let i = 0; i < count; i++) {
+    const entry = 6 + i * 16
+    if (entry + 16 > buf.length) break
+
+    let size = view.getUint8(entry)
+    if (size === 0) size = 256
+    const bytes = view.getUint32(entry + 8, true)
+    const offset = view.getUint32(entry + 12, true)
+    const slice = buf.subarray(offset, offset + Math.min(8, bytes))
+    const format = isPng(slice) ? 'png' : slice.length >= 4 ? 'bmp' : 'unknown'
+
+    entries.push({ size, bytes, format })
+  }
+
+  return entries
+}
+
+export async function countIcoImages(blob: Blob): Promise<number> {
+  return (await inspectIco(blob)).length
+}
+
+export async function downloadBlob(
+  blob: Blob,
+  filename: string,
+): Promise<void> {
+  const name = filename.endsWith('.ico') ? filename : `${filename}.ico`
+  const binary = new Blob([blob], { type: 'application/octet-stream' })
+  const url = URL.createObjectURL(binary)
   const a = document.createElement('a')
   a.href = url
-  a.download = filename
+  a.download = name
+  a.rel = 'noopener'
+  a.style.display = 'none'
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 4000)
 }

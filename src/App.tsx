@@ -2,10 +2,10 @@ import { useEffect, useId, useRef, useState, useTransition } from 'react'
 import {
   downloadBlob,
   encodeIco,
+  inspectIco,
   makePreviewDataUrls,
-  type FitMode,
 } from './lib/ico'
-import { PRESETS, resolveSizes, type PresetId } from './lib/presets'
+import { PRESET_ORDER, PRESETS, resolveSizes, type PresetId } from './lib/presets'
 import './App.css'
 
 type Preview = { size: number; url: string }
@@ -14,34 +14,47 @@ function stemFromName(name: string) {
   return name.replace(/\.[^.]+$/, '') || 'icon'
 }
 
+function formatBytes(n: number) {
+  if (n < 1024) return `${n} B`
+  return `${(n / 1024).toFixed(1)} KB`
+}
+
 export default function App() {
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
 
   const [file, setFile] = useState<File | null>(null)
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
-  const [preset, setPreset] = useState<PresetId>('app')
-  const [include48, setInclude48] = useState(false)
-  const [fit, setFit] = useState<FitMode>('cover')
-  const [trim, setTrim] = useState(true)
+  const [preset, setPreset] = useState<PresetId>('favicon')
   const [previews, setPreviews] = useState<Preview[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const [, startTransition] = useTransition()
 
-  const sizes = resolveSizes(preset, include48)
-  const renderOptions = { fit, trim }
+  const sizes = resolveSizes(preset)
+  const renderOptions = { fit: 'cover' as const, trim: false }
 
   useEffect(() => {
     if (!file) {
       setSourceUrl(null)
       setPreviews([])
+      setShowPreview(false)
       return
     }
 
     const url = URL.createObjectURL(file)
     setSourceUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [file])
+
+  useEffect(() => {
+    if (!file || !showPreview) {
+      if (!showPreview) setPreviews([])
+      return
+    }
 
     let cancelled = false
     setError(null)
@@ -59,9 +72,8 @@ export default function App() {
 
     return () => {
       cancelled = true
-      URL.revokeObjectURL(url)
     }
-  }, [file, sizes.join(','), fit, trim])
+  }, [file, sizes.join(','), showPreview])
 
   function acceptFile(next: File | undefined | null) {
     if (!next) return
@@ -71,6 +83,9 @@ export default function App() {
     }
     startTransition(() => {
       setError(null)
+      setStatus(null)
+      setShowPreview(false)
+      setPreviews([])
       setFile(next)
     })
   }
@@ -79,9 +94,15 @@ export default function App() {
     if (!file) return
     setBusy(true)
     setError(null)
+    setStatus(null)
     try {
       const blob = await encodeIco(file, sizes, renderOptions)
-      downloadBlob(blob, `${stemFromName(file.name)}.ico`)
+      const entries = await inspectIco(blob)
+      await downloadBlob(blob, `${stemFromName(file.name)}.ico`)
+      const sizeList = entries.map((e) => e.size).join(' / ')
+      setStatus(
+        `已保存 .ico（${formatBytes(blob.size)}，${entries.length} 档：${sizeList} px）。`,
+      )
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '生成失败')
     } finally {
@@ -158,7 +179,7 @@ export default function App() {
 
         <section className="controls" aria-label="导出设置">
           <div className="preset-row" role="radiogroup" aria-label="图标类型">
-            {(Object.keys(PRESETS) as PresetId[]).map((id) => {
+            {PRESET_ORDER.map((id) => {
               const item = PRESETS[id]
               const selected = preset === id
               return (
@@ -176,74 +197,20 @@ export default function App() {
               )
             })}
           </div>
-
-          <div className="options">
-            {preset === 'favicon' && (
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={include48}
-                  onChange={(e) => setInclude48(e.target.checked)}
-                />
-                <span>包含 48×48</span>
-              </label>
-            )}
-
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={trim}
-                onChange={(e) => setTrim(e.target.checked)}
-              />
-              <span>去除透明边距（推荐）</span>
-            </label>
-
-            {!trim && (
-              <label className="fit">
-                <span>适配</span>
-                <select
-                  value={fit}
-                  onChange={(e) => setFit(e.target.value as FitMode)}
-                >
-                  <option value="cover">铺满裁切</option>
-                  <option value="contain">完整放入（留白）</option>
-                </select>
-              </label>
-            )}
-          </div>
         </section>
 
-        {previews.length > 0 && (
-          <section className="previews" aria-label="尺寸预览">
-            <p className="previews-title">将写入的尺寸</p>
-            <ul>
-              {previews.map((p, i) => (
-                <li
-                  key={p.size}
-                  style={{ animationDelay: `${80 + i * 60}ms` }}
-                >
-                  <div className="preview-frame">
-                    <img
-                      src={p.url}
-                      alt={`${p.size} 像素预览`}
-                      width={p.size}
-                      height={p.size}
-                      style={{
-                        width: Math.min(p.size, 64),
-                        height: Math.min(p.size, 64),
-                      }}
-                    />
-                  </div>
-                  <span>{p.size}px</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
         {error && <p className="error">{error}</p>}
+        {status && <p className="status">{status}</p>}
 
         <div className="actions">
+          <button
+            type="button"
+            className="preview-btn"
+            disabled={!file || busy}
+            onClick={() => setShowPreview((v) => !v)}
+          >
+            {showPreview ? '收起预览' : '预览效果'}
+          </button>
           <button
             type="button"
             className="generate"
@@ -253,6 +220,33 @@ export default function App() {
             {busy ? '生成中…' : '生成 ICO'}
           </button>
         </div>
+
+        {showPreview && previews.length > 0 && (
+          <section className="previews" aria-label="尺寸预览">
+            <p className="previews-title">将写入的尺寸（1:1 实际像素）</p>
+            <ul>
+              {previews.map((p, i) => (
+                <li
+                  key={p.size}
+                  style={{ animationDelay: `${80 + i * 60}ms` }}
+                >
+                  <div
+                    className="preview-frame"
+                    style={{ width: p.size, height: p.size }}
+                  >
+                    <img
+                      src={p.url}
+                      alt={`${p.size} 像素预览`}
+                      width={p.size}
+                      height={p.size}
+                    />
+                  </div>
+                  <span>{p.size}px</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </main>
     </div>
   )

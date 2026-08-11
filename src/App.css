@@ -256,7 +256,8 @@
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.85rem;
+  align-items: flex-start;
+  gap: 1rem 1.25rem;
 }
 
 .previews li {
@@ -269,22 +270,25 @@
 }
 
 .preview-frame {
-  width: 76px;
-  height: 76px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
+  display: block;
+  box-sizing: content-box;
+  border-radius: 4px;
   border: 1px solid var(--line);
   background:
-    linear-gradient(45deg, #d9e1e8 25%, transparent 25%) 0 0 / 10px 10px,
-    linear-gradient(-45deg, #d9e1e8 25%, transparent 25%) 0 5px / 10px 10px,
-    linear-gradient(45deg, transparent 75%, #d9e1e8 75%) 5px -5px / 10px 10px,
-    linear-gradient(-45deg, transparent 75%, #d9e1e8 75%) -5px 0 / 10px 10px,
+    linear-gradient(45deg, #d9e1e8 25%, transparent 25%) 0 0 / 8px 8px,
+    linear-gradient(-45deg, #d9e1e8 25%, transparent 25%) 0 4px / 8px 8px,
+    linear-gradient(45deg, transparent 75%, #d9e1e8 75%) 4px -4px / 8px 8px,
+    linear-gradient(-45deg, transparent 75%, #d9e1e8 75%) -4px 0 / 8px 8px,
     #f7fafc;
+  overflow: hidden;
 }
 
 .preview-frame img {
-  image-rendering: auto;
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .error {
@@ -293,8 +297,48 @@
   font-size: 0.92rem;
 }
 
+.status {
+  margin: 0;
+  color: var(--accent-deep);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
 .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   animation: rise 0.7s ease 0.2s both;
+}
+
+.preview-btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, white 82%, transparent);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.02rem;
+  letter-spacing: 0.01em;
+  padding: 0.9rem 1.6rem;
+  min-width: 140px;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.preview-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, white);
+}
+
+.preview-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .generate {

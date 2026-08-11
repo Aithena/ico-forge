@@ -1,4 +1,4 @@
-export type PresetId = 'app' | 'favicon'
+export type PresetId = 'favicon' | 'app'
 
 export interface Preset {
   id: PresetId
@@ -7,27 +7,23 @@ export interface Preset {
   sizes: number[]
 }
 
+export const PRESET_ORDER: PresetId[] = ['favicon', 'app']
+
 export const PRESETS: Record<PresetId, Preset> = {
-  app: {
-    id: 'app',
-    label: 'Windows 应用图标',
-    hint: '16 · 32 · 48 · 256',
-    sizes: [16, 32, 48, 256],
-  },
   favicon: {
     id: 'favicon',
     label: '网站 Favicon',
-    hint: '16 · 32',
-    sizes: [16, 32],
+    hint: '16 · 32 · 64',
+    sizes: [16, 32, 64],
+  },
+  app: {
+    id: 'app',
+    label: 'Windows 应用图标',
+    hint: '16 · 32 · 64 · 128 · 256',
+    sizes: [16, 32, 64, 128, 256],
   },
 }
 
-export function resolveSizes(
-  presetId: PresetId,
-  includeFavicon48: boolean,
-): number[] {
-  if (presetId === 'favicon' && includeFavicon48) {
-    return [16, 32, 48]
-  }
+export function resolveSizes(presetId: PresetId): number[] {
   return PRESETS[presetId].sizes
 }
