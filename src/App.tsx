@@ -98,7 +98,10 @@ export default function App() {
     try {
       const blob = await encodeIco(file, sizes, renderOptions)
       const entries = await inspectIco(blob)
-      await downloadBlob(blob, `${stemFromName(file.name)}.ico`)
+      await downloadBlob(
+        blob,
+        preset === 'favicon' ? 'favicon.ico' : `${stemFromName(file.name)}.ico`,
+      )
       const sizeList = entries.map((e) => e.size).join(' / ')
       setStatus(
         `已保存 .ico（${formatBytes(blob.size)}，${entries.length} 档：${sizeList} px）。`,
