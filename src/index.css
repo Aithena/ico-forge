@@ -1,0 +1,53 @@
+:root {
+  --ink: #18212b;
+  --ink-soft: #3d4a57;
+  --muted: #667788;
+  --paper: #edf2f6;
+  --paper-2: #d8e2ea;
+  --line: rgba(24, 33, 43, 0.14);
+  --accent: #1f6f6a;
+  --accent-deep: #155753;
+  --ember: #c46b2a;
+  --danger: #a33b3b;
+  --radius: 14px;
+  --font-display: 'Syne', 'Segoe UI', sans-serif;
+  --font-body: 'Manrope', 'Segoe UI', sans-serif;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--paper);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
