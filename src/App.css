@@ -36,6 +36,40 @@
   gap: 1.35rem;
 }
 
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  animation: rise 0.55s ease both;
+}
+
+.site-nav button {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, white 78%, transparent);
+  color: var(--ink-soft);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.92rem;
+  padding: 0.55rem 0.95rem;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.site-nav button:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  color: var(--ink);
+}
+
+.site-nav button.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, white);
+  color: var(--ink);
+}
+
 .brand {
   display: grid;
   gap: 0.45rem;
@@ -289,6 +323,32 @@
   height: 100%;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+}
+
+.svg-preview {
+  animation: rise 0.55s ease both;
+}
+
+.svg-preview-frame {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.25rem;
+  background:
+    linear-gradient(45deg, #d9e1e8 25%, transparent 25%) 0 0 / 12px 12px,
+    linear-gradient(-45deg, #d9e1e8 25%, transparent 25%) 0 6px / 12px 12px,
+    linear-gradient(45deg, transparent 75%, #d9e1e8 75%) 6px -6px / 12px 12px,
+    linear-gradient(-45deg, transparent 75%, #d9e1e8 75%) -6px 0 / 12px 12px,
+    #f7fafc;
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  overflow: auto;
+}
+
+.svg-preview-frame svg {
+  max-width: min(320px, 100%);
+  height: auto;
+  display: block;
 }
 
 .error {

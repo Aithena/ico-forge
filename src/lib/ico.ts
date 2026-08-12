@@ -315,7 +315,7 @@ export async function downloadBlob(
   blob: Blob,
   filename: string,
 ): Promise<void> {
-  const name = filename.endsWith('.ico') ? filename : `${filename}.ico`
+  const name = /\.[a-z0-9]+$/i.test(filename) ? filename : `${filename}.ico`
   const binary = new Blob([blob], { type: 'application/octet-stream' })
   const url = URL.createObjectURL(binary)
   const a = document.createElement('a')
