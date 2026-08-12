@@ -1,4 +1,6 @@
-import { useEffect, useId, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
+import { PreviewDrawer } from '../components/PreviewDrawer'
+import { usePasteImage } from '../hooks/usePasteImage'
 import {
   downloadBlob,
   encodeIco,
@@ -30,7 +32,7 @@ export default function IcoPage() {
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [showPreview, setShowPreview] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [, startTransition] = useTransition()
 
   const sizes = resolveSizes(preset)
@@ -40,7 +42,7 @@ export default function IcoPage() {
     if (!file) {
       setSourceUrl(null)
       setPreviews([])
-      setShowPreview(false)
+      setDrawerOpen(false)
       return
     }
 
@@ -50,8 +52,8 @@ export default function IcoPage() {
   }, [file])
 
   useEffect(() => {
-    if (!file || !showPreview) {
-      if (!showPreview) setPreviews([])
+    if (!file) {
+      setPreviews([])
       return
     }
 
@@ -72,9 +74,9 @@ export default function IcoPage() {
     return () => {
       cancelled = true
     }
-  }, [file, sizes.join(','), showPreview])
+  }, [file, sizes.join(',')])
 
-  function acceptFile(next: File | undefined | null) {
+  const acceptFile = useCallback((next: File | undefined | null) => {
     if (!next) return
     if (!next.type.startsWith('image/')) {
       setError('请选择图片文件（PNG / JPG / WebP 等）')
@@ -83,11 +85,13 @@ export default function IcoPage() {
     startTransition(() => {
       setError(null)
       setStatus(null)
-      setShowPreview(false)
       setPreviews([])
+      setDrawerOpen(true)
       setFile(next)
     })
-  }
+  }, [])
+
+  usePasteImage(acceptFile)
 
   async function onGenerate() {
     if (!file) return
@@ -169,7 +173,7 @@ export default function IcoPage() {
           <div className="drop-empty">
             <span className="drop-glyph" aria-hidden />
             <strong>拖入图片到这里</strong>
-            <span>或点击选择 · PNG / JPG / WebP</span>
+            <span>或点击选择 · 也可 Ctrl+V 粘贴</span>
           </div>
         )}
       </section>
@@ -199,29 +203,37 @@ export default function IcoPage() {
       {error && <p className="error">{error}</p>}
       {status && <p className="status">{status}</p>}
 
-      <div className="actions">
-        <button
-          type="button"
-          className="preview-btn"
-          disabled={!file || busy}
-          onClick={() => setShowPreview((v) => !v)}
-        >
-          {showPreview ? '收起预览' : '预览效果'}
-        </button>
-        <button
-          type="button"
-          className="generate"
-          disabled={!file || busy}
-          onClick={onGenerate}
-        >
-          {busy ? '生成中…' : '生成 ICO'}
-        </button>
-      </div>
+      {file && !drawerOpen && (
+        <div className="actions">
+          <button
+            type="button"
+            className="preview-btn"
+            onClick={() => setDrawerOpen(true)}
+          >
+            查看预览
+          </button>
+        </div>
+      )}
 
-      {showPreview && previews.length > 0 && (
-        <section className="previews" aria-label="尺寸预览">
-          <p className="previews-title">将写入的尺寸（1:1 实际像素）</p>
-          <ul>
+      <PreviewDrawer
+        open={drawerOpen && !!file}
+        title="尺寸预览"
+        onClose={() => setDrawerOpen(false)}
+        wide
+        action={
+          <button
+            type="button"
+            className="generate"
+            disabled={!file || busy}
+            onClick={onGenerate}
+          >
+            {busy ? '生成中…' : '下载'}
+          </button>
+        }
+      >
+        <p className="previews-title">将写入的尺寸（1:1 实际像素）</p>
+        {previews.length > 0 ? (
+          <ul className="ico-preview-list">
             {previews.map((p, i) => (
               <li key={p.size} style={{ animationDelay: `${80 + i * 60}ms` }}>
                 <div
@@ -239,8 +251,10 @@ export default function IcoPage() {
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        ) : (
+          <p className="wm-hint">预览生成中…</p>
+        )}
+      </PreviewDrawer>
     </>
   )
 }

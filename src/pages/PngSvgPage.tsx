@@ -1,4 +1,6 @@
-import { useEffect, useId, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
+import { PreviewDrawer } from '../components/PreviewDrawer'
+import { usePasteImage } from '../hooks/usePasteImage'
 import { downloadTextFile, pngToSvg } from '../lib/pngToSvg'
 
 function stemFromName(name: string) {
@@ -12,18 +14,17 @@ export default function PngSvgPage() {
   const [file, setFile] = useState<File | null>(null)
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
   const [svgText, setSvgText] = useState<string | null>(null)
-  const [showPreview, setShowPreview] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [, startTransition] = useTransition()
 
   useEffect(() => {
     if (!file) {
       setSourceUrl(null)
       setSvgText(null)
-      setShowPreview(false)
       return
     }
     const url = URL.createObjectURL(file)
@@ -31,7 +32,40 @@ export default function PngSvgPage() {
     return () => URL.revokeObjectURL(url)
   }, [file])
 
-  function acceptFile(next: File | undefined | null) {
+  useEffect(() => {
+    if (!file) {
+      setSvgText(null)
+      setDrawerOpen(false)
+      return
+    }
+
+    let cancelled = false
+    setBusy(true)
+    setError(null)
+    setStatus(null)
+    setSvgText(null)
+    setDrawerOpen(true)
+
+    void pngToSvg(file)
+      .then((svg) => {
+        if (cancelled) return
+        setSvgText(svg)
+        setStatus(`预览已就绪（${(svg.length / 1024).toFixed(1)} KB）`)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : '预览失败')
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [file])
+
+  const acceptFile = useCallback((next: File | undefined | null) => {
     if (!next) return
     if (!next.type.startsWith('image/')) {
       setError('请选择 PNG 等位图文件')
@@ -41,52 +75,18 @@ export default function PngSvgPage() {
       setError(null)
       setStatus(null)
       setSvgText(null)
-      setShowPreview(false)
       setFile(next)
     })
-  }
+  }, [])
 
-  async function ensureSvg(): Promise<string> {
-    if (!file) throw new Error('请先选择图片')
-    if (svgText) return svgText
-    const svg = await pngToSvg(file)
-    setSvgText(svg)
-    return svg
-  }
-
-  async function onPreview() {
-    if (!file) return
-    if (showPreview) {
-      setShowPreview(false)
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      await ensureSvg()
-      setShowPreview(true)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '预览失败')
-    } finally {
-      setBusy(false)
-    }
-  }
+  usePasteImage(acceptFile)
 
   async function onConvert() {
-    if (!file) return
-    setBusy(true)
+    if (!file || !svgText) return
     setError(null)
-    setStatus(null)
-    try {
-      const svg = await ensureSvg()
-      const name = `${stemFromName(file.name)}.svg`
-      downloadTextFile(svg, name)
-      setStatus(`已保存 ${name}（${(svg.length / 1024).toFixed(1)} KB）。`)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '转换失败')
-    } finally {
-      setBusy(false)
-    }
+    const name = `${stemFromName(file.name)}.svg`
+    downloadTextFile(svgText, name)
+    setStatus(`已保存 ${name}（${(svgText.length / 1024).toFixed(1)} KB）。`)
   }
 
   return (
@@ -148,7 +148,7 @@ export default function PngSvgPage() {
           <div className="drop-empty">
             <span className="drop-glyph" aria-hidden />
             <strong>拖入纯色图标 PNG</strong>
-            <span>或点击选择</span>
+            <span>点击选择 · 也可 Ctrl+V 粘贴</span>
           </div>
         )}
       </section>
@@ -156,34 +156,38 @@ export default function PngSvgPage() {
       {error && <p className="error">{error}</p>}
       {status && <p className="status">{status}</p>}
 
-      <div className="actions">
-        <button
-          type="button"
-          className="preview-btn"
-          disabled={!file || busy}
-          onClick={onPreview}
-        >
-          {showPreview ? '收起预览' : '预览效果'}
-        </button>
-        <button
-          type="button"
-          className="generate"
-          disabled={!file || busy}
-          onClick={onConvert}
-        >
-          {busy ? '转换中…' : '生成 SVG'}
-        </button>
-      </div>
-
-      {showPreview && svgText && (
-        <section className="svg-preview" aria-label="SVG 预览">
-          <p className="previews-title">矢量预览</p>
-          <div
-            className="svg-preview-frame"
-            dangerouslySetInnerHTML={{ __html: svgText }}
-          />
-        </section>
+      {svgText && !drawerOpen && (
+        <div className="actions">
+          <button
+            type="button"
+            className="preview-btn"
+            onClick={() => setDrawerOpen(true)}
+          >
+            查看预览
+          </button>
+        </div>
       )}
+
+      <PreviewDrawer
+        open={drawerOpen && !!svgText}
+        title="矢量预览"
+        onClose={() => setDrawerOpen(false)}
+        action={
+          <button
+            type="button"
+            className="generate"
+            disabled={!file || !svgText || busy}
+            onClick={onConvert}
+          >
+            {busy ? '转换中…' : '下载'}
+          </button>
+        }
+      >
+        <div
+          className="svg-preview-frame"
+          dangerouslySetInnerHTML={{ __html: svgText ?? '' }}
+        />
+      </PreviewDrawer>
     </>
   )
 }
