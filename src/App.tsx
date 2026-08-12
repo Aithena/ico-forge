@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react'
 import ClarityPage from './pages/ClarityPage'
 import ColorPickPage from './pages/ColorPickPage'
+import CropPage from './pages/CropPage'
 import IcoPage from './pages/IcoPage'
 import PngSvgPage from './pages/PngSvgPage'
 import WatermarkPage from './pages/WatermarkPage'
 import './App.css'
 
-type Route = 'ico' | 'png-svg' | 'color-pick' | 'watermark' | 'clarity'
+type Route =
+  | 'ico'
+  | 'png-svg'
+  | 'color-pick'
+  | 'watermark'
+  | 'clarity'
+  | 'crop'
 
 function routeFromHash(): Route {
   const raw = window.location.hash.replace(/^#\/?/, '')
@@ -14,6 +21,7 @@ function routeFromHash(): Route {
   if (raw === 'color-pick') return 'color-pick'
   if (raw === 'watermark') return 'watermark'
   if (raw === 'clarity') return 'clarity'
+  if (raw === 'crop') return 'crop'
   return 'ico'
 }
 
@@ -23,6 +31,7 @@ const ROUTES: { id: Route; hash: string; label: string }[] = [
   { id: 'color-pick', hash: '#/color-pick', label: '点选取色' },
   { id: 'watermark', hash: '#/watermark', label: '加水印' },
   { id: 'clarity', hash: '#/clarity', label: '图片清晰化' },
+  { id: 'crop', hash: '#/crop', label: '图片裁剪' },
 ]
 
 export default function App() {
@@ -61,6 +70,7 @@ export default function App() {
         {route === 'color-pick' && <ColorPickPage />}
         {route === 'watermark' && <WatermarkPage />}
         {route === 'clarity' && <ClarityPage />}
+        {route === 'crop' && <CropPage />}
       </main>
     </div>
   )

@@ -884,6 +884,133 @@
   height: auto;
 }
 
+.crop-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  animation: rise 0.55s ease both;
+}
+
+.crop-circle-toggle {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  padding: 0.45rem 0.95rem;
+  cursor: pointer;
+}
+
+.crop-circle-toggle.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, white);
+}
+
+.crop-stage {
+  position: relative;
+  width: 100%;
+  min-height: 280px;
+  height: min(62vh, 560px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background:
+    linear-gradient(45deg, #d9e1e8 25%, transparent 25%) 0 0 / 16px 16px,
+    linear-gradient(-45deg, #d9e1e8 25%, transparent 25%) 0 8px / 16px 16px,
+    #eef3f6;
+  touch-action: none;
+  user-select: none;
+  animation: rise 0.6s ease both;
+}
+
+.crop-viewport {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.crop-stage-img {
+  display: block;
+  max-width: none;
+  max-height: none;
+  width: auto;
+  height: auto;
+  pointer-events: none;
+}
+
+.crop-frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 9999px rgba(18, 28, 38, 0.48);
+  cursor: move;
+  touch-action: none;
+}
+
+.crop-frame.is-circle {
+  border-radius: 50%;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: #fff;
+  border: 1px solid var(--accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  z-index: 2;
+}
+
+.crop-handle.nw {
+  left: -6px;
+  top: -6px;
+  cursor: nwse-resize;
+}
+.crop-handle.ne {
+  right: -6px;
+  top: -6px;
+  cursor: nesw-resize;
+}
+.crop-handle.sw {
+  left: -6px;
+  bottom: -6px;
+  cursor: nesw-resize;
+}
+.crop-handle.se {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+
+.crop-aspect-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.crop-aspect-row button {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+}
+
+.crop-aspect-row button.is-selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, white);
+}
+
 .clarity-compare {
   animation: rise 0.45s ease both;
 }
