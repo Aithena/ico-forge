@@ -17,12 +17,15 @@ import {
   downloadCropFile,
   initialCrop,
   loadImageFile,
-  MIN_CROP_EDGE,
+  OUTPUT_SIZE_PRESETS,
   refitCrop,
   renderCrop,
   type AspectId,
+  type CropEnhanceMode,
   type CropRect,
+  type OutputSizePreset,
 } from '../lib/crop'
+import { isAiCancelledError } from '../lib/aiUpscale'
 
 function stemFromName(name: string) {
   return name.replace(/\.[^.]+$/, '') || 'image'
@@ -51,6 +54,9 @@ export default function CropPage() {
   const [natural, setNatural] = useState({ w: 0, h: 0 })
   const [aspect, setAspect] = useState<AspectId>('1:1')
   const [circle, setCircle] = useState(false)
+  const [outputSize, setOutputSize] = useState<OutputSizePreset>(500)
+  const [enhanceStrength, setEnhanceStrength] =
+    useState<CropEnhanceMode>('normal')
   const [crop, setCrop] = useState<CropRect | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -237,15 +243,25 @@ export default function CropPage() {
     }
 
     let cancelled = false
+    const delay = enhanceStrength === 'ai' ? 1400 : 220
     const timer = window.setTimeout(() => {
       setBusy(true)
       setError(null)
+      if (enhanceStrength === 'ai') {
+        setStatus('准备 AI 超分…')
+      }
       void loadImageFile(file)
         .then((image) =>
           renderCrop({
             image,
             crop,
             circle: circleMode,
+            minEdge: outputSize,
+            enhanceStrength,
+            isCancelled: () => cancelled,
+            onEnhanceProgress: (message) => {
+              if (!cancelled) setStatus(message)
+            },
           }),
         )
         .then((result) => {
@@ -257,27 +273,45 @@ export default function CropPage() {
             if (prev) URL.revokeObjectURL(prev)
             return result.previewUrl
           })
-          const tip = result.upscaled
-            ? `，已放大并清晰化至 ${result.width}×${result.height}`
-            : `（${result.width}×${result.height}）`
+          const tip = result.usedAi
+            ? `，本地 AI 超分至 ${result.width}×${result.height}`
+            : result.upscaled
+              ? `，Lanczos 放大并增强至 ${result.width}×${result.height}`
+              : `（${result.width}×${result.height}）`
           setStatus(
             circleMode ? `圆形头像预览${tip}` : `裁剪预览${tip}`,
           )
         })
         .catch((err: unknown) => {
-          if (cancelled) return
+          if (cancelled || isAiCancelledError(err)) return
           setError(err instanceof Error ? err.message : '预览失败')
         })
         .finally(() => {
           if (!cancelled) setBusy(false)
         })
-    }, 200)
+    }, delay)
 
     return () => {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [file, crop, circleMode, natural.w])
+    // Round crop to avoid float jitter re-firing AI mid-drag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    file,
+    circleMode,
+    natural.w,
+    outputSize,
+    enhanceStrength,
+    crop
+      ? [
+          Math.round(crop.x),
+          Math.round(crop.y),
+          Math.round(crop.w),
+          Math.round(crop.h),
+        ].join(':')
+      : '',
+  ])
 
   function toImagePoint(clientX: number, clientY: number) {
     const stage = stageRef.current
@@ -401,6 +435,9 @@ export default function CropPage() {
         image,
         crop,
         circle: circleMode,
+        minEdge: outputSize,
+        enhanceStrength,
+        onEnhanceProgress: (message) => setStatus(message),
       })
       setPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev)
@@ -411,11 +448,14 @@ export default function CropPage() {
         `${stemFromName(file.name)}${circleMode ? '-avatar' : '-crop'}.png`,
       )
       setStatus(
-        result.upscaled
-          ? `已下载（小图已放大清晰化至 ${result.width}×${result.height}）`
-          : `已下载（${result.width}×${result.height}）`,
+        result.usedAi
+          ? `已下载（本地 AI 超分至 ${result.width}×${result.height}）`
+          : result.upscaled
+            ? `已下载（小图已放大清晰化至 ${result.width}×${result.height}）`
+            : `已下载（${result.width}×${result.height}）`,
       )
     } catch (err: unknown) {
+      if (isAiCancelledError(err)) return
       setError(err instanceof Error ? err.message : '导出失败')
     } finally {
       setBusy(false)
@@ -440,8 +480,7 @@ export default function CropPage() {
         <p className="brand-mark">图片裁剪</p>
         <h1 className="brand-line">常用比例与圆形头像</h1>
         <p className="brand-sub">
-          小图自动放大到至少 {MIN_CROP_EDGE}px 并清晰化；滚轮按鼠标位置缩放。支持
-          Ctrl+V。
+          小图可增强：标准 / 优秀 / AI 超分（本地免额度）。滚轮按鼠标位置缩放。
         </p>
       </header>
 
@@ -601,9 +640,61 @@ export default function CropPage() {
               ))}
             </div>
 
+            <div className="crop-enhance-row">
+              <span className="crop-enhance-label">小图目标</span>
+              <div
+                className="crop-aspect-row"
+                role="radiogroup"
+                aria-label="最小输出边长"
+              >
+                {OUTPUT_SIZE_PRESETS.map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    role="radio"
+                    aria-checked={outputSize === size}
+                    className={outputSize === size ? 'is-selected' : undefined}
+                    onClick={() => setOutputSize(size)}
+                  >
+                    {size}px
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="crop-enhance-row">
+              <span className="crop-enhance-label">增强</span>
+              <div
+                className="crop-aspect-row"
+                role="radiogroup"
+                aria-label="清晰增强强度"
+              >
+                {(
+                  [
+                    ['normal', '标准（默认）'],
+                    ['strong', '优秀'],
+                    ['ai', 'AI 超分'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={enhanceStrength === id}
+                    className={
+                      enhanceStrength === id ? 'is-selected' : undefined
+                    }
+                    onClick={() => setEnhanceStrength(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <p className="wm-hint">
-              滚轮按鼠标位置缩放。裁剪结果任一边不足 {MIN_CROP_EDGE}
-              px 时，会放大并清晰化。
+              小图不足目标边长时增强：标准 / 优秀为本地锐化放大；「AI
+              超分」首次约加载 20MB 模型，免额度。
               {aspect === '1:1' ? ' 点击裁剪框可切换圆形头像。' : ''}
             </p>
           </section>

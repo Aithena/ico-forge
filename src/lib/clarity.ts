@@ -1,3 +1,5 @@
+import Pica from 'pica'
+
 export interface ClarityOptions {
   /** sharpen strength 0–3 */
   amount: number
@@ -15,6 +17,8 @@ export const DEFAULT_CLARITY: ClarityOptions = {
   threshold: 4,
   upscale: 1,
 }
+
+const pica = Pica({ features: ['js', 'wasm', 'ww'] })
 
 function loadImage(source: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -182,6 +186,110 @@ export async function enhanceClarity(
   }
 }
 
+export type UpscaleStrength = 'normal' | 'strong'
+
+/**
+ * High-quality upscale (Lanczos via pica) + multi-pass unsharp.
+ * Better than a single canvas drawImage scale for small sources.
+ */
+export async function upscaleEnhance(
+  source: Blob,
+  targetW: number,
+  targetH: number,
+  strength: UpscaleStrength = 'strong',
+): Promise<{ blob: Blob; width: number; height: number }> {
+  const img = await loadImage(source)
+  const from = document.createElement('canvas')
+  from.width = img.naturalWidth
+  from.height = img.naturalHeight
+  const fctx = from.getContext('2d')
+  if (!fctx) throw new Error('Canvas 不可用')
+  fctx.drawImage(img, 0, 0)
+
+  const tw = Math.max(1, Math.round(targetW))
+  const th = Math.max(1, Math.round(targetH))
+
+  // Stepwise ≤2× growth tends to preserve edges better than one huge jump.
+  let cur = from
+  let cw = from.width
+  let ch = from.height
+  while (cw < tw || ch < th) {
+    const stepW =
+      cw < tw
+        ? Math.min(tw, Math.max(cw + 1, Math.round(cw * Math.min(2, tw / cw))))
+        : tw
+    const stepH =
+      ch < th
+        ? Math.min(th, Math.max(ch + 1, Math.round(ch * Math.min(2, th / ch))))
+        : th
+
+    const next = document.createElement('canvas')
+    next.width = stepW
+    next.height = stepH
+    try {
+      await pica.resize(cur, next, {
+        quality: 3,
+        unsharpAmount: strength === 'strong' ? 120 : 80,
+        unsharpRadius: 0.8,
+        unsharpThreshold: 2,
+      })
+    } catch {
+      const nctx = next.getContext('2d')
+      if (!nctx) throw new Error('Canvas 不可用')
+      nctx.imageSmoothingEnabled = true
+      nctx.imageSmoothingQuality = 'high'
+      nctx.drawImage(cur, 0, 0, stepW, stepH)
+    }
+    cur = next
+    cw = stepW
+    ch = stepH
+  }
+
+  const ctx = cur.getContext('2d', { willReadFrequently: true })
+  if (!ctx) throw new Error('Canvas 不可用')
+
+  const passes =
+    strength === 'strong'
+      ? [
+          { amount: 1.6, radius: 1.1, threshold: 2 },
+          { amount: 0.9, radius: 0.6, threshold: 1 },
+        ]
+      : [{ amount: 1.35, radius: 1.15, threshold: 3 }]
+
+  for (const pass of passes) {
+    const src = ctx.getImageData(0, 0, cur.width, cur.height)
+    ctx.putImageData(
+      unsharpMask(src, pass.amount, pass.radius, pass.threshold),
+      0,
+      0,
+    )
+  }
+
+  // Mild local contrast (clarity) on luminance
+  const data = ctx.getImageData(0, 0, cur.width, cur.height)
+  const clarityAmt = strength === 'strong' ? 0.35 : 0.2
+  const soft = gaussianBlur(data, strength === 'strong' ? 2.2 : 1.6)
+  const out = data.data
+  const softD = soft.data
+  for (let i = 0; i < out.length; i += 4) {
+    for (let c = 0; c < 3; c++) {
+      const v = out[i + c]!
+      const s = softD[i + c]!
+      out[i + c] = Math.min(255, Math.max(0, Math.round(v + (v - s) * clarityAmt)))
+    }
+  }
+  ctx.putImageData(data, 0, 0)
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    cur.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('导出失败'))),
+      'image/png',
+    )
+  })
+
+  return { blob, width: tw, height: th }
+}
+
 export function downloadClarityFile(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -193,3 +301,4 @@ export function downloadClarityFile(blob: Blob, filename: string) {
   a.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 4000)
 }
+

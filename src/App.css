@@ -1011,6 +1011,16 @@
   background: color-mix(in srgb, var(--accent) 12%, white);
 }
 
+.crop-enhance-row {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.crop-enhance-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .clarity-compare {
   animation: rise 0.45s ease both;
 }

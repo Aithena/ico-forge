@@ -1,4 +1,5 @@
-import { enhanceClarity } from './clarity'
+import { upscaleEnhance, type UpscaleStrength } from './clarity'
+import { aiUpscale } from './aiUpscale'
 
 export type AspectId =
   | 'free'
@@ -17,8 +18,13 @@ export type CropRect = {
   h: number
 }
 
-/** Output shorter than this is upscaled and sharpened. */
+export type CropEnhanceMode = UpscaleStrength | 'ai'
+
+/** Default minimum edge after upscale. */
 export const MIN_CROP_EDGE = 500
+
+export const OUTPUT_SIZE_PRESETS = [500, 768, 1024] as const
+export type OutputSizePreset = (typeof OUTPUT_SIZE_PRESETS)[number]
 
 export const ASPECT_PRESETS: {
   id: AspectId
@@ -168,8 +174,13 @@ export type RenderCropOptions = {
   circle: boolean
   /** Cap the longer edge of the export. */
   maxEdge?: number
-  /** Upscale + sharpen when either edge is below this (default 500). */
+  /** Upscale when either edge is below this (default 500). */
   minEdge?: number
+  /** Classical sharpen strength, or local AI super-res. */
+  enhanceStrength?: CropEnhanceMode
+  onEnhanceProgress?: (message: string) => void
+  /** Abort check for in-flight AI when preview is superseded. */
+  isCancelled?: () => boolean
 }
 
 export async function renderCrop(
@@ -180,10 +191,14 @@ export async function renderCrop(
   width: number
   height: number
   upscaled: boolean
+  usedAi: boolean
 }> {
   const { image, crop, circle } = options
-  const maxEdge = options.maxEdge ?? 2048
+  const maxEdge = options.maxEdge ?? 4096
   const minEdge = options.minEdge ?? MIN_CROP_EDGE
+  const enhanceStrength = options.enhanceStrength ?? 'normal'
+  const onProgress = options.onEnhanceProgress
+  const isCancelled = options.isCancelled
 
   let outW = Math.max(1, Math.round(crop.w))
   let outH = Math.max(1, Math.round(crop.h))
@@ -224,19 +239,51 @@ export async function renderCrop(
   let width = outW
   let height = outH
   let upscaled = false
+  let usedAi = false
 
   if (outW < minEdge || outH < minEdge) {
-    const scale = Math.max(minEdge / outW, minEdge / outH)
-    const enhanced = await enhanceClarity(blob, {
-      amount: 1.45,
-      radius: 1.25,
-      threshold: 3,
-      upscale: scale,
-    })
-    blob = enhanced.blob
-    width = enhanced.width
-    height = enhanced.height
-    upscaled = true
+    if (enhanceStrength === 'ai') {
+      onProgress?.('加载 / 运行本地 AI 超分…')
+      const ai = await aiUpscale(blob, {
+        minEdge,
+        isCancelled,
+        onProgress: (percent) => {
+          onProgress?.(`AI 超分 ${percent}%`)
+        },
+      })
+      blob = ai.blob
+      width = ai.width
+      height = ai.height
+      usedAi = true
+      upscaled = true
+
+      // One AI ×2 pass; fill remaining gap with Lanczos (avoids multi-fail look)
+      if (width < minEdge || height < minEdge) {
+        if (isCancelled?.()) {
+          const err = new Error('AI_CANCELLED')
+          err.name = 'AbortError'
+          throw err
+        }
+        onProgress?.('补齐尺寸…')
+        const scale = Math.max(minEdge / width, minEdge / height)
+        const tw = Math.max(1, Math.round(width * scale))
+        const th = Math.max(1, Math.round(height * scale))
+        const enhanced = await upscaleEnhance(blob, tw, th, 'strong')
+        blob = enhanced.blob
+        width = enhanced.width
+        height = enhanced.height
+      }
+    } else {
+      onProgress?.('Lanczos 放大并锐化…')
+      const scale = Math.max(minEdge / outW, minEdge / outH)
+      const tw = Math.max(1, Math.round(outW * scale))
+      const th = Math.max(1, Math.round(outH * scale))
+      const enhanced = await upscaleEnhance(blob, tw, th, enhanceStrength)
+      blob = enhanced.blob
+      width = enhanced.width
+      height = enhanced.height
+      upscaled = true
+    }
   }
 
   return {
@@ -245,6 +292,7 @@ export async function renderCrop(
     width,
     height,
     upscaled,
+    usedAi,
   }
 }
 
