@@ -35,12 +35,16 @@ function isDecode(mode: Mode) {
 
 export default function BarcodePage() {
   const inputId = useId()
+  const logoInputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
+  const logoInputRef = useRef<HTMLInputElement>(null)
 
   const [mode, setMode] = useState<Mode>('qr-gen')
   const [qrText, setQrText] = useState('')
   const [qrSize, setQrSize] = useState(256)
   const [qrEcc, setQrEcc] = useState<QrEcc>('M')
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [barcodeText, setBarcodeText] = useState('')
   const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormatId>('CODE128')
   const [displayValue, setDisplayValue] = useState(true)
@@ -93,6 +97,27 @@ export default function BarcodePage() {
   }, [file])
 
   useEffect(() => {
+    if (!logoFile) {
+      setLogoUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(logoFile)
+    setLogoUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [logoFile])
+
+  const acceptLogo = useCallback((next: File | undefined | null) => {
+    if (!next) return
+    if (!next.type.startsWith('image/')) {
+      setError('请选择图片作为中心图')
+      return
+    }
+    setError(null)
+    setLogoFile(next)
+    setQrEcc('H')
+  }, [])
+
+  useEffect(() => {
     if (mode !== 'qr-gen') return
     const text = qrText.trim()
     if (!text) {
@@ -110,7 +135,7 @@ export default function BarcodePage() {
     const timer = window.setTimeout(() => {
       setBusy(true)
       setError(null)
-      void generateQrPng({ text, size: qrSize, ecc: qrEcc })
+      void generateQrPng({ text, size: qrSize, ecc: qrEcc, logo: logoFile })
         .then((result) => {
           if (cancelled) {
             URL.revokeObjectURL(result.previewUrl)
@@ -140,7 +165,7 @@ export default function BarcodePage() {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [mode, qrText, qrSize, qrEcc])
+  }, [mode, qrText, qrSize, qrEcc, logoFile])
 
   useEffect(() => {
     if (mode !== 'barcode-gen') return
@@ -312,7 +337,7 @@ export default function BarcodePage() {
               />
             </label>
             <div className="wm-field">
-              <span>容错</span>
+              <span>容错{logoFile ? '（中心图需高容错）' : ''}</span>
               <div className="color-formats" role="radiogroup" aria-label="容错级别">
                 {ECC_OPTIONS.map((item) => (
                   <button
@@ -321,12 +346,51 @@ export default function BarcodePage() {
                     role="radio"
                     aria-checked={qrEcc === item.id}
                     className={qrEcc === item.id ? 'is-selected' : undefined}
+                    disabled={!!logoFile && item.id !== 'H'}
                     onClick={() => setQrEcc(item.id)}
                   >
                     {item.label}
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="wm-field">
+              <span>中心图片</span>
+              <div className="code-logo-row">
+                {logoUrl ? (
+                  <div className="code-logo-thumb" aria-hidden>
+                    <img src={logoUrl} alt="" />
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="preview-btn"
+                  onClick={() => logoInputRef.current?.click()}
+                >
+                  {logoUrl ? '更换图片' : '添加图片'}
+                </button>
+                {logoUrl && (
+                  <button
+                    type="button"
+                    className="preview-btn"
+                    onClick={() => setLogoFile(null)}
+                  >
+                    移除
+                  </button>
+                )}
+                <input
+                  id={logoInputId}
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(e) => {
+                    acceptLogo(e.target.files?.[0])
+                    e.target.value = ''
+                  }}
+                />
+              </div>
+              <p className="wm-hint">居中叠加，圆角白底，自动提高容错以免影响识别</p>
             </div>
           </div>
         </section>

@@ -52,10 +52,66 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   })
 }
 
+/** White badge corner radius for the center logo. */
+export const QR_LOGO_RADIUS = 6
+
+/** Center badge size relative to the QR canvas. Stays under H-level ECC (~30%). */
+const QR_LOGO_RATIO = 0.2
+
+async function loadImage(blob: Blob): Promise<{ img: HTMLImageElement; url: string }> {
+  const url = URL.createObjectURL(blob)
+  const img = new Image()
+  img.src = url
+  try {
+    await img.decode()
+    return { img, url }
+  } catch {
+    URL.revokeObjectURL(url)
+    throw new Error('无法读取中心图片')
+  }
+}
+
+function drawCenterLogo(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  canvasSize: number,
+) {
+  const badge = Math.max(24, Math.round(canvasSize * QR_LOGO_RATIO))
+  const pad = Math.max(4, Math.round(badge * 0.12))
+  const radius = Math.min(QR_LOGO_RADIUS, Math.floor(badge / 2))
+  const x = (canvasSize - badge) / 2
+  const y = (canvasSize - badge) / 2
+  const inner = Math.max(8, badge - pad * 2)
+  const ix = x + (badge - inner) / 2
+  const iy = y + (badge - inner) / 2
+  const innerRadius = Math.min(radius, Math.floor(inner / 2))
+
+  ctx.save()
+  ctx.beginPath()
+  ctx.roundRect(x, y, badge, badge, radius)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+  ctx.restore()
+
+  ctx.save()
+  ctx.beginPath()
+  ctx.roundRect(ix, iy, inner, inner, innerRadius)
+  ctx.clip()
+
+  const nw = img.naturalWidth || img.width
+  const nh = img.naturalHeight || img.height
+  const scale = Math.max(inner / nw, inner / nh)
+  const dw = nw * scale
+  const dh = nh * scale
+  ctx.drawImage(img, ix + (inner - dw) / 2, iy + (inner - dh) / 2, dw, dh)
+  ctx.restore()
+}
+
 export async function generateQrPng(options: {
   text: string
   size: number
   ecc: QrEcc
+  logo?: Blob | null
   dark?: string
   light?: string
 }): Promise<{ blob: Blob; previewUrl: string; width: number; height: number }> {
@@ -64,15 +120,27 @@ export async function generateQrPng(options: {
 
   const { toCanvas } = await import('qrcode')
   const canvas = document.createElement('canvas')
+  const ecc = options.logo ? 'H' : options.ecc
   await toCanvas(canvas, text, {
     width: options.size,
     margin: 2,
-    errorCorrectionLevel: options.ecc,
+    errorCorrectionLevel: ecc,
     color: {
       dark: options.dark ?? '#000000',
       light: options.light ?? '#ffffff',
     },
   })
+
+  if (options.logo) {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('无法绘制中心图片')
+    const { img, url } = await loadImage(options.logo)
+    try {
+      drawCenterLogo(ctx, img, canvas.width)
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
 
   const blob = await canvasToBlob(canvas)
   return {
