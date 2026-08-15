@@ -4,12 +4,16 @@ import {
   BARCODE_FORMATS,
   copyText,
   decodeFromImage,
+  DEFAULT_QR_COLORS,
   downloadBlobFile,
   generateBarcodePng,
   generateQrPng,
   looksLikeHttpUrl,
+  qrContrastHint,
+  QR_GRADIENT_DIRS,
   type BarcodeFormatId,
   type DecodeResult,
+  type QrColors,
   type QrEcc,
 } from '../lib/barcode'
 
@@ -45,6 +49,7 @@ export default function BarcodePage() {
   const [qrEcc, setQrEcc] = useState<QrEcc>('M')
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [qrColors, setQrColors] = useState<QrColors>(DEFAULT_QR_COLORS)
   const [barcodeText, setBarcodeText] = useState('')
   const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormatId>('CODE128')
   const [displayValue, setDisplayValue] = useState(true)
@@ -62,6 +67,7 @@ export default function BarcodePage() {
 
   const formatMeta =
     BARCODE_FORMATS.find((f) => f.id === barcodeFormat) ?? BARCODE_FORMATS[0]!
+  const contrastHint = qrContrastHint(qrColors)
 
   const acceptFile = useCallback((next: File | undefined | null) => {
     if (!next) return
@@ -135,7 +141,13 @@ export default function BarcodePage() {
     const timer = window.setTimeout(() => {
       setBusy(true)
       setError(null)
-      void generateQrPng({ text, size: qrSize, ecc: qrEcc, logo: logoFile })
+      void generateQrPng({
+        text,
+        size: qrSize,
+        ecc: qrEcc,
+        logo: logoFile,
+        colors: qrColors,
+      })
         .then((result) => {
           if (cancelled) {
             URL.revokeObjectURL(result.previewUrl)
@@ -165,7 +177,7 @@ export default function BarcodePage() {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [mode, qrText, qrSize, qrEcc, logoFile])
+  }, [mode, qrText, qrSize, qrEcc, logoFile, qrColors])
 
   useEffect(() => {
     if (mode !== 'barcode-gen') return
@@ -336,6 +348,85 @@ export default function BarcodePage() {
                 onChange={(e) => setQrSize(Number(e.target.value))}
               />
             </label>
+            <div className="wm-field">
+              <span>颜色</span>
+              <div className="color-formats" role="radiogroup" aria-label="着色方式">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={qrColors.mode === 'solid'}
+                  className={qrColors.mode === 'solid' ? 'is-selected' : undefined}
+                  onClick={() => setQrColors((c) => ({ ...c, mode: 'solid' }))}
+                >
+                  纯色
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={qrColors.mode === 'gradient'}
+                  className={qrColors.mode === 'gradient' ? 'is-selected' : undefined}
+                  onClick={() => setQrColors((c) => ({ ...c, mode: 'gradient' }))}
+                >
+                  渐变
+                </button>
+              </div>
+            </div>
+            <div className="code-color-row">
+              <label className="wm-field wm-inline">
+                <span>{qrColors.mode === 'gradient' ? '起点' : '码颜色'}</span>
+                <input
+                  type="color"
+                  value={qrColors.fg}
+                  onChange={(e) =>
+                    setQrColors((c) => ({ ...c, fg: e.target.value }))
+                  }
+                />
+              </label>
+              {qrColors.mode === 'gradient' && (
+                <label className="wm-field wm-inline">
+                  <span>终点</span>
+                  <input
+                    type="color"
+                    value={qrColors.fg2}
+                    onChange={(e) =>
+                      setQrColors((c) => ({ ...c, fg2: e.target.value }))
+                    }
+                  />
+                </label>
+              )}
+              <label className="wm-field wm-inline">
+                <span>底色</span>
+                <input
+                  type="color"
+                  value={qrColors.bg}
+                  onChange={(e) =>
+                    setQrColors((c) => ({ ...c, bg: e.target.value }))
+                  }
+                />
+              </label>
+            </div>
+            {qrColors.mode === 'gradient' && (
+              <div className="wm-field">
+                <span>渐变方向</span>
+                <div className="color-formats" role="radiogroup" aria-label="渐变方向">
+                  {QR_GRADIENT_DIRS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={qrColors.dir === item.id}
+                      className={qrColors.dir === item.id ? 'is-selected' : undefined}
+                      onClick={() =>
+                        setQrColors((c) => ({ ...c, dir: item.id }))
+                      }
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {contrastHint && <p className="wm-hint">{contrastHint}</p>}
             <div className="wm-field">
               <span>容错{logoFile ? '（中心图需高容错）' : ''}</span>
               <div className="color-formats" role="radiogroup" aria-label="容错级别">

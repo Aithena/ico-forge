@@ -107,13 +107,142 @@ function drawCenterLogo(
   ctx.restore()
 }
 
+export type QrColorMode = 'solid' | 'gradient'
+export type QrGradientDir = 'tb' | 'lr' | 'tlbr' | 'trbl'
+
+export type QrColors = {
+  mode: QrColorMode
+  fg: string
+  fg2: string
+  bg: string
+  dir: QrGradientDir
+}
+
+export const DEFAULT_QR_COLORS: QrColors = {
+  mode: 'solid',
+  fg: '#18212b',
+  fg2: '#1f6f6a',
+  bg: '#ffffff',
+  dir: 'tlbr',
+}
+
+export const QR_GRADIENT_DIRS: { id: QrGradientDir; label: string }[] = [
+  { id: 'tb', label: '上下' },
+  { id: 'lr', label: '左右' },
+  { id: 'tlbr', label: '斜向 ↘' },
+  { id: 'trbl', label: '斜向 ↙' },
+]
+
+function hexToRgb(hex: string): [number, number, number] {
+  const raw = hex.replace('#', '')
+  const n = parseInt(raw.length === 3 ? raw.replace(/./g, '$&$&') : raw, 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+function relativeLuminance(hex: string) {
+  const toLin = (c: number) => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  const [r, g, b] = hexToRgb(hex)
+  return 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b)
+}
+
+function contrastRatio(a: string, b: string) {
+  const l1 = relativeLuminance(a)
+  const l2 = relativeLuminance(b)
+  const hi = Math.max(l1, l2)
+  const lo = Math.min(l1, l2)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+export function qrContrastHint(colors: QrColors): string | null {
+  const fgs = colors.mode === 'gradient' ? [colors.fg, colors.fg2] : [colors.fg]
+  const worst = Math.min(...fgs.map((fg) => contrastRatio(fg, colors.bg)))
+  if (worst < 3) return '前景与底色对比偏弱，部分设备可能扫不出'
+  return null
+}
+
+function gradientPoints(dir: QrGradientDir, w: number, h: number) {
+  switch (dir) {
+    case 'tb':
+      return { x0: w / 2, y0: 0, x1: w / 2, y1: h }
+    case 'lr':
+      return { x0: 0, y0: h / 2, x1: w, y1: h / 2 }
+    case 'trbl':
+      return { x0: w, y0: 0, x1: 0, y1: h }
+    default:
+      return { x0: 0, y0: 0, x1: w, y1: h }
+  }
+}
+
+function makeQrFill(
+  ctx: CanvasRenderingContext2D,
+  colors: QrColors,
+  w: number,
+  h: number,
+) {
+  if (colors.mode !== 'gradient') return colors.fg
+  const { x0, y0, x1, y1 } = gradientPoints(colors.dir, w, h)
+  const g = ctx.createLinearGradient(x0, y0, x1, y1)
+  g.addColorStop(0, colors.fg)
+  g.addColorStop(1, colors.fg2)
+  return g
+}
+
+function recolorQr(canvas: HTMLCanvasElement, colors: QrColors) {
+  const w = canvas.width
+  const h = canvas.height
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) throw new Error('无法着色二维码')
+
+  const src = ctx.getImageData(0, 0, w, h)
+  const mask = document.createElement('canvas')
+  mask.width = w
+  mask.height = h
+  const mctx = mask.getContext('2d')
+  if (!mctx) throw new Error('无法着色二维码')
+  const mid = mctx.createImageData(w, h)
+  const pixels = src.data
+  const out = mid.data
+  for (let i = 0; i < pixels.length; i += 4) {
+    const lum =
+      (pixels[i] ?? 0) * 0.299 +
+      (pixels[i + 1] ?? 0) * 0.587 +
+      (pixels[i + 2] ?? 0) * 0.114
+    if (lum < 128) {
+      out[i] = 0
+      out[i + 1] = 0
+      out[i + 2] = 0
+      out[i + 3] = 255
+    }
+  }
+  mctx.putImageData(mid, 0, 0)
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.fillStyle = colors.bg
+  ctx.fillRect(0, 0, w, h)
+
+  const fg = document.createElement('canvas')
+  fg.width = w
+  fg.height = h
+  const fctx = fg.getContext('2d')
+  if (!fctx) throw new Error('无法着色二维码')
+  fctx.fillStyle = makeQrFill(fctx, colors, w, h)
+  fctx.fillRect(0, 0, w, h)
+  fctx.globalCompositeOperation = 'destination-in'
+  fctx.drawImage(mask, 0, 0)
+
+  ctx.drawImage(fg, 0, 0)
+}
+
 export async function generateQrPng(options: {
   text: string
   size: number
   ecc: QrEcc
   logo?: Blob | null
-  dark?: string
-  light?: string
+  colors?: QrColors
 }): Promise<{ blob: Blob; previewUrl: string; width: number; height: number }> {
   const text = options.text.trim()
   if (!text) throw new Error('请输入要编码的内容')
@@ -126,10 +255,12 @@ export async function generateQrPng(options: {
     margin: 2,
     errorCorrectionLevel: ecc,
     color: {
-      dark: options.dark ?? '#000000',
-      light: options.light ?? '#ffffff',
+      dark: '#000000',
+      light: '#ffffff',
     },
   })
+
+  recolorQr(canvas, options.colors ?? DEFAULT_QR_COLORS)
 
   if (options.logo) {
     const ctx = canvas.getContext('2d')

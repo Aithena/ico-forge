@@ -1122,6 +1122,26 @@ a.code-open-link {
   border-radius: 6px;
 }
 
+.code-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.25rem;
+}
+
+.code-color-row .wm-field {
+  min-width: 120px;
+}
+
+.code-color-row input[type='color'] {
+  width: 44px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+}
+
 @media (max-width: 560px) {
   .clarity-compare-grid {
     grid-template-columns: 1fr;
