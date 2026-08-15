@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import BarcodePage from './pages/BarcodePage'
 import ClarityPage from './pages/ClarityPage'
 import ColorPickPage from './pages/ColorPickPage'
 import CropPage from './pages/CropPage'
@@ -14,6 +15,7 @@ type Route =
   | 'watermark'
   | 'clarity'
   | 'crop'
+  | 'qr'
 
 function routeFromHash(): Route {
   const raw = window.location.hash.replace(/^#\/?/, '')
@@ -22,6 +24,7 @@ function routeFromHash(): Route {
   if (raw === 'watermark') return 'watermark'
   if (raw === 'clarity') return 'clarity'
   if (raw === 'crop') return 'crop'
+  if (raw === 'qr') return 'qr'
   return 'ico'
 }
 
@@ -32,6 +35,7 @@ const ROUTES: { id: Route; hash: string; label: string }[] = [
   { id: 'watermark', hash: '#/watermark', label: '加水印' },
   { id: 'clarity', hash: '#/clarity', label: '图片清晰化' },
   { id: 'crop', hash: '#/crop', label: '图片裁剪' },
+  { id: 'qr', hash: '#/qr', label: '二维码' },
 ]
 
 export default function App() {
@@ -71,6 +75,7 @@ export default function App() {
         {route === 'watermark' && <WatermarkPage />}
         {route === 'clarity' && <ClarityPage />}
         {route === 'crop' && <CropPage />}
+        {route === 'qr' && <BarcodePage />}
       </main>
     </div>
   )
