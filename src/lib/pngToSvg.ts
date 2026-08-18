@@ -298,6 +298,12 @@ function pruneLayoutWhitespace(node: Node) {
   }
 }
 
+const NUMBER_RE = /-?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?/
+const EXACT_NUMBER_RE = new RegExp(`^${NUMBER_RE.source}$`)
+const PATH_CMD_RE = /^[MmLlHhVvCcSsQqTtAaZz]$/
+const SKIP_ATTR_RE =
+  /^(id|class|href|xlink:href|xmlns(:.*)?|xml:space|role|aria-.*|fill|stroke|stop-color|flood-color|lighting-color|color|style|clip-path|mask|filter|marker-start|marker-mid|marker-end|cursor|overflow)$/i
+
 function compactNumericToken(raw: string) {
   const n = Number(raw)
   if (!Number.isFinite(n)) return raw
@@ -306,37 +312,73 @@ function compactNumericToken(raw: string) {
   return String(rounded)
 }
 
-function compactNumericString(value: string) {
-  let next = value.replace(
-    /-?(?:\d*\.\d+|\d+)(?:e[-+]?\d+)?/gi,
-    compactNumericToken,
-  )
-  next = next.replace(/\s+/g, ' ').trim()
-  next = next
-    .replace(/\s*([MmLlHhVvCcSsQqTtAaZz,])\s*/g, '$1')
-    .replace(/,/g, ' ')
-    .replace(/\s+/g, ' ')
+function formatPathNumber(raw: string) {
+  const compact = compactNumericToken(raw)
+  if (compact.startsWith('0.')) return compact.slice(1)
+  if (compact.startsWith('-0.')) return `-.${compact.slice(3)}`
+  return compact
+}
+
+/** Join path tokens so `10 0.5` never becomes `100.5`, and `93.2 .8` can be `93.2.8`. */
+function compactPathD(d: string) {
+  const tokens = d.match(/[MmLlHhVvCcSsQqTtAaZz]|-?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?/g)
+  if (!tokens) return d.trim()
+
+  let out = ''
+  let prevKind: 'cmd' | 'num' | null = null
+  let prevHadDot = false
+
+  for (const raw of tokens) {
+    if (PATH_CMD_RE.test(raw)) {
+      out += raw
+      prevKind = 'cmd'
+      prevHadDot = false
+      continue
+    }
+
+    const s = formatPathNumber(raw)
+    const startsWithDot = s.startsWith('.') || s.startsWith('-.')
+    const startsWithMinus = s.startsWith('-')
+    if (prevKind === 'num') {
+      const canAbut = startsWithMinus || (startsWithDot && prevHadDot)
+      if (!canAbut) out += ' '
+    }
+    out += s
+    prevKind = 'num'
+    prevHadDot = s.includes('.')
+  }
+
+  return out
+}
+
+function compactNumberList(value: string) {
+  return value
     .trim()
-  return next
+    .replace(/,/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => (EXACT_NUMBER_RE.test(token) ? compactNumericToken(token) : token))
+    .join(' ')
+}
+
+function compactAttrValue(name: string, value: string) {
+  if (SKIP_ATTR_RE.test(name) || isEditorAttribute(name)) return value
+  if (/^#|^rgb|^hsl|^url\(/i.test(value.trim())) return value
+
+  const local = name.toLowerCase()
+  if (local === 'd') return compactPathD(value)
+  if (local === 'points' || local === 'viewbox') return compactNumberList(value)
+  if (local.endsWith('transform')) {
+    return value.replace(new RegExp(NUMBER_RE, 'g'), compactNumericToken)
+  }
+  if (EXACT_NUMBER_RE.test(value.trim())) {
+    return compactNumericToken(value.trim())
+  }
+  return value
 }
 
 function isEditorAttribute(name: string) {
   return /^(inkscape|sodipodi|serif|sketch):/i.test(name)
-}
-
-function compactSvgTree(el: Element) {
-  for (const attr of [...el.attributes]) {
-    if (isEditorAttribute(attr.name)) {
-      el.removeAttribute(attr.name)
-      continue
-    }
-    if (/^(id|class|href|xlink:href|xmlns(:.*)?|xml:space)$/i.test(attr.name)) {
-      continue
-    }
-    const compacted = compactNumericString(attr.value)
-    if (compacted !== attr.value) el.setAttribute(attr.name, compacted)
-  }
-  for (const child of [...el.children]) compactSvgTree(child)
 }
 
 function escapeXml(value: string, attr = false) {
@@ -345,13 +387,22 @@ function escapeXml(value: string, attr = false) {
   return out.replace(/>/g, '&gt;')
 }
 
-function serializeAttrs(el: Element) {
+function serializeAttrs(el: Element, compact: boolean) {
   return [...el.attributes]
-    .map((attr) => ` ${attr.name}="${escapeXml(attr.value, true)}"`)
+    .filter((attr) => !(compact && isEditorAttribute(attr.name)))
+    .map((attr) => {
+      const value = compact ? compactAttrValue(attr.name, attr.value) : attr.value
+      return ` ${attr.name}="${escapeXml(value, true)}"`
+    })
     .join('')
 }
 
-function serializeNode(node: Node, pretty: boolean, depth: number): string {
+function serializeNode(
+  node: Node,
+  pretty: boolean,
+  depth: number,
+  compact: boolean,
+): string {
   if (node.nodeType === Node.TEXT_NODE || node.nodeType === Node.CDATA_SECTION_NODE) {
     const text = node.textContent ?? ''
     if (!pretty) return escapeXml(text)
@@ -363,7 +414,7 @@ function serializeNode(node: Node, pretty: boolean, depth: number): string {
 
   const el = node as Element
   const name = el.tagName
-  const attrs = serializeAttrs(el)
+  const attrs = serializeAttrs(el, compact)
   const kids = [...el.childNodes].filter((child) => {
     if (child.nodeType === Node.ELEMENT_NODE) return true
     if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) {
@@ -391,11 +442,11 @@ function serializeNode(node: Node, pretty: boolean, depth: number): string {
   }
 
   if (!pretty) {
-    return `<${name}${attrs}>${kids.map((child) => serializeNode(child, false, 0)).join('')}</${name}>`
+    return `<${name}${attrs}>${kids.map((child) => serializeNode(child, false, 0, compact)).join('')}</${name}>`
   }
 
   const inner = kids
-    .map((child) => serializeNode(child, true, depth + 1))
+    .map((child) => serializeNode(child, true, depth + 1, compact))
     .filter(Boolean)
     .join('\n')
   return `${pad}<${name}${attrs}>\n${inner}\n${pad}</${name}>`
@@ -405,15 +456,14 @@ function serializeNode(node: Node, pretty: boolean, depth: number): string {
 export function compressSvg(text: string) {
   const root = parseSvgRoot(text)
   pruneLayoutWhitespace(root)
-  compactSvgTree(root)
-  return serializeNode(root, false, 0)
+  return serializeNode(root, false, 0, true)
 }
 
 /** Pretty-print SVG with 2-space indent. */
 export function formatSvg(text: string) {
   const root = parseSvgRoot(text)
   pruneLayoutWhitespace(root)
-  return serializeNode(root, true, 0)
+  return serializeNode(root, true, 0, false)
 }
 
 export function downloadTextFile(content: string, filename: string) {
