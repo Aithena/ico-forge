@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
-import { PreviewDrawer } from '../components/PreviewDrawer'
+import { Workbench } from '../components/Workbench'
 import { usePasteImage } from '../hooks/usePasteImage'
 import {
   BARCODE_FORMATS,
@@ -67,8 +67,6 @@ export default function BarcodePage() {
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const previewOpenedRef = useRef(false)
   const [, startTransition] = useTransition()
 
   const formatMeta =
@@ -87,7 +85,6 @@ export default function BarcodePage() {
       setError(null)
       setStatus(null)
       setDecoded(null)
-      setDrawerOpen(true)
       setFile(next)
     })
   }, [])
@@ -143,8 +140,6 @@ export default function BarcodePage() {
       })
       setPreviewBlob(null)
       setBusy(false)
-      previewOpenedRef.current = false
-      setDrawerOpen(false)
       return
     }
 
@@ -170,10 +165,6 @@ export default function BarcodePage() {
             return result.previewUrl
           })
           setPreviewBlob(result.blob)
-          if (!previewOpenedRef.current) {
-            previewOpenedRef.current = true
-            setDrawerOpen(true)
-          }
         })
         .catch((err: unknown) => {
           if (cancelled) return
@@ -206,8 +197,6 @@ export default function BarcodePage() {
       })
       setPreviewBlob(null)
       setBusy(false)
-      previewOpenedRef.current = false
-      setDrawerOpen(false)
       return
     }
 
@@ -230,10 +219,6 @@ export default function BarcodePage() {
             return result.previewUrl
           })
           setPreviewBlob(result.blob)
-          if (!previewOpenedRef.current) {
-            previewOpenedRef.current = true
-            setDrawerOpen(true)
-          }
         })
         .catch((err: unknown) => {
           if (cancelled) return
@@ -272,7 +257,6 @@ export default function BarcodePage() {
         if (cancelled) return
         setDecoded(result)
         setStatus(null)
-        setDrawerOpen(true)
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -291,8 +275,6 @@ export default function BarcodePage() {
     setMode(next)
     setError(null)
     setStatus(null)
-    setDrawerOpen(false)
-    previewOpenedRef.current = false
     if (!isDecode(next)) {
       setFile(null)
       setDecoded(null)
@@ -324,17 +306,77 @@ export default function BarcodePage() {
     }
   }
 
-  return (
-    <>
-      <header className="brand">
-        <p className="brand-mark">二维码</p>
-        <h1 className="brand-line">生成与识别</h1>
-        <p className="brand-sub">
-          本地生成二维码、条形码，也可从图片识别。解码支持拖入、选择或 Ctrl+V
-          粘贴。
-        </p>
-      </header>
+  const isGen = mode === 'qr-gen' || mode === 'barcode-gen'
+  const resultTitle = isDecode(mode)
+    ? '识别结果'
+    : mode === 'qr-gen'
+      ? '二维码预览'
+      : '条形码预览'
 
+  return (
+    <Workbench
+      brandMark="二维码"
+      brandLine="生成与识别"
+      brandSub="本地生成二维码、条形码，也可从图片识别。解码支持拖入、选择或 Ctrl+V 粘贴。"
+      resultTitle={resultTitle}
+      resultEmpty={
+        isDecode(mode)
+          ? '上传图片后，识别结果会显示在这里。'
+          : '输入内容后，预览会显示在这里。'
+      }
+      resultAction={
+        isGen && previewBlob ? (
+          <button
+            type="button"
+            className="generate"
+            disabled={!previewBlob || busy}
+            onClick={onDownload}
+          >
+            {busy ? '生成中…' : '下载'}
+          </button>
+        ) : decoded ? (
+          <button type="button" className="generate" onClick={onCopyDecoded}>
+            复制内容
+          </button>
+        ) : undefined
+      }
+      result={
+        isGen && previewUrl ? (
+          <div className="code-preview">
+            <img
+              src={previewUrl}
+              alt={mode === 'qr-gen' ? '二维码预览' : '条形码预览'}
+            />
+          </div>
+        ) : isDecode(mode) && (sourceUrl || decoded) ? (
+          <>
+            {sourceUrl && (
+              <div className="wm-preview-frame code-decode-thumb">
+                <img src={sourceUrl} alt="识别原图" />
+              </div>
+            )}
+            {decoded ? (
+              <section className="code-result" aria-label="识别结果">
+                <p className="previews-title">{decoded.format}</p>
+                <pre>{decoded.text}</pre>
+                {looksLikeHttpUrl(decoded.text) && (
+                  <a
+                    className="preview-btn code-open-link"
+                    href={decoded.text.trim()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    打开链接
+                  </a>
+                )}
+              </section>
+            ) : (
+              <p className="wm-hint">{busy ? '识别中…' : '等待识别结果'}</p>
+            )}
+          </>
+        ) : null
+      }
+    >
       <div className="color-formats" role="radiogroup" aria-label="功能">
         {MODES.map((item) => (
           <button
@@ -577,18 +619,6 @@ export default function BarcodePage() {
         </section>
       )}
 
-      {(mode === 'qr-gen' || mode === 'barcode-gen') && previewUrl && !drawerOpen && (
-        <div className="actions">
-          <button
-            type="button"
-            className="preview-btn"
-            onClick={() => setDrawerOpen(true)}
-          >
-            查看预览
-          </button>
-        </div>
-      )}
-
       {isDecode(mode) && !sourceUrl && (
         <section
           className={`dropzone${dragOver ? ' is-over' : ''}`}
@@ -664,83 +694,11 @@ export default function BarcodePage() {
               onChange={(e) => acceptFile(e.target.files?.[0])}
             />
           </div>
-
-          {decoded && !drawerOpen && (
-            <div className="actions">
-              <button
-                type="button"
-                className="preview-btn"
-                onClick={() => setDrawerOpen(true)}
-              >
-                查看结果
-              </button>
-            </div>
-          )}
         </>
-      )}
-
-      {(mode === 'qr-gen' || mode === 'barcode-gen') && (
-        <PreviewDrawer
-          open={drawerOpen && !!previewUrl}
-          title={mode === 'qr-gen' ? '二维码预览' : '条形码预览'}
-          onClose={() => setDrawerOpen(false)}
-          action={
-            <button
-              type="button"
-              className="generate"
-              disabled={!previewBlob || busy}
-              onClick={onDownload}
-            >
-              {busy ? '生成中…' : '下载'}
-            </button>
-          }
-        >
-          <div className="code-preview">
-            <img
-              src={previewUrl ?? ''}
-              alt={mode === 'qr-gen' ? '二维码预览' : '条形码预览'}
-            />
-          </div>
-        </PreviewDrawer>
-      )}
-
-      {isDecode(mode) && (
-        <PreviewDrawer
-          open={drawerOpen && !!decoded}
-          title="识别结果"
-          onClose={() => setDrawerOpen(false)}
-          action={
-            <button type="button" className="generate" onClick={onCopyDecoded}>
-              复制内容
-            </button>
-          }
-        >
-          {sourceUrl && (
-            <div className="wm-preview-frame">
-              <img src={sourceUrl} alt="识别原图" />
-            </div>
-          )}
-          {decoded && (
-            <section className="code-result" aria-label="识别结果">
-              <p className="previews-title">{decoded.format}</p>
-              <pre>{decoded.text}</pre>
-              {looksLikeHttpUrl(decoded.text) && (
-                <a
-                  className="preview-btn code-open-link"
-                  href={decoded.text.trim()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  打开链接
-                </a>
-              )}
-            </section>
-          )}
-        </PreviewDrawer>
       )}
 
       {error && <p className="error">{error}</p>}
       {status && <p className="status">{status}</p>}
-    </>
+    </Workbench>
   )
 }

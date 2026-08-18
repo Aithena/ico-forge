@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
-import { PreviewDrawer } from '../components/PreviewDrawer'
+import { Workbench } from '../components/Workbench'
 import { usePasteImage } from '../hooks/usePasteImage'
 import {
   DEFAULT_WATERMARK,
@@ -33,7 +33,6 @@ export default function WatermarkPage() {
   const [dragOver, setDragOver] = useState(false)
   const [customFontName, setCustomFontName] = useState<string | null>(null)
   const [fontBusy, setFontBusy] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const fontInputRef = useRef<HTMLInputElement>(null)
   const fontInputId = useId()
   const [, startTransition] = useTransition()
@@ -47,7 +46,6 @@ export default function WatermarkPage() {
     startTransition(() => {
       setError(null)
       setStatus(null)
-      setDrawerOpen(true)
       setBaseFile(next)
     })
   }, [])
@@ -77,7 +75,6 @@ export default function WatermarkPage() {
   useEffect(() => {
     if (!baseFile) {
       setPreviewUrl(null)
-      setDrawerOpen(false)
       return
     }
     if (settings.kind === 'image' && !markFile) {
@@ -164,14 +161,42 @@ export default function WatermarkPage() {
   }
 
   return (
-    <>
-      <header className="brand">
-        <p className="brand-mark">加水印</p>
-        <h1 className="brand-line">文字或图片水印</h1>
-        <p className="brand-sub">
-          可自定义位置、是否重复平铺、斜度。支持 Ctrl+V 粘贴底图。
-        </p>
-      </header>
+    <Workbench
+      brandMark="加水印"
+      brandLine="文字或图片水印"
+      brandSub="可自定义位置、是否重复平铺、斜度。支持 Ctrl+V 粘贴底图。"
+      resultTitle="水印预览"
+      resultEmpty="上传底图后，加水印效果会显示在这里。"
+      resultAction={
+        previewUrl ? (
+          <button
+            type="button"
+            className="generate"
+            disabled={busy || (settings.kind === 'image' && !markFile)}
+            onClick={onExport}
+          >
+            {busy ? '处理中…' : '下载'}
+          </button>
+        ) : undefined
+      }
+      result={
+        baseUrl ? (
+          previewUrl ? (
+            <div className="wm-preview-frame">
+              <img src={previewUrl} alt="加水印预览" />
+            </div>
+          ) : (
+            <p className="wm-hint">
+              {settings.kind === 'image' && !markFile
+                ? '请先上传水印图片'
+                : busy
+                  ? '处理中…'
+                  : '预览生成中…'}
+            </p>
+          )
+        ) : null
+      }
+    >
 
       {!baseUrl ? (
         <section
@@ -405,7 +430,6 @@ export default function WatermarkPage() {
                         return
                       }
                       setMarkFile(f)
-                      setDrawerOpen(true)
                       setStatus(null)
                       setError(null)
                     }}
@@ -493,44 +517,11 @@ export default function WatermarkPage() {
               )}
             </div>
           </section>
-
-          {previewUrl && !drawerOpen && (
-            <div className="actions">
-              <button
-                type="button"
-                className="preview-btn"
-                onClick={() => setDrawerOpen(true)}
-              >
-                查看预览
-              </button>
-            </div>
-          )}
-
-          <PreviewDrawer
-            open={drawerOpen && !!previewUrl}
-            title="水印预览"
-            onClose={() => setDrawerOpen(false)}
-            wide
-            action={
-              <button
-                type="button"
-                className="generate"
-                disabled={busy || (settings.kind === 'image' && !markFile)}
-                onClick={onExport}
-              >
-                {busy ? '处理中…' : '下载'}
-              </button>
-            }
-          >
-            <div className="wm-preview-frame">
-              <img src={previewUrl ?? ''} alt="加水印预览" />
-            </div>
-          </PreviewDrawer>
         </>
       )}
 
       {error && <p className="error">{error}</p>}
       {status && <p className="status">{status}</p>}
-    </>
+    </Workbench>
   )
 }

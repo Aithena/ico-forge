@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
-import { PreviewDrawer } from '../components/PreviewDrawer'
+import { Workbench } from '../components/Workbench'
 import { usePasteImage } from '../hooks/usePasteImage'
 import {
   downloadBlob,
@@ -32,7 +32,6 @@ export default function IcoPage() {
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [, startTransition] = useTransition()
 
   const sizes = resolveSizes(preset)
@@ -42,7 +41,6 @@ export default function IcoPage() {
     if (!file) {
       setSourceUrl(null)
       setPreviews([])
-      setDrawerOpen(false)
       return
     }
 
@@ -86,7 +84,6 @@ export default function IcoPage() {
       setError(null)
       setStatus(null)
       setPreviews([])
-      setDrawerOpen(true)
       setFile(next)
     })
   }, [])
@@ -117,13 +114,54 @@ export default function IcoPage() {
   }
 
   return (
-    <>
-      <header className="brand">
-        <p className="brand-mark">ICO Forge</p>
-        <h1 className="brand-line">把图片锻成多尺寸图标</h1>
-        <p className="brand-sub">全程在浏览器本地完成，不上传服务器。</p>
-      </header>
-
+    <Workbench
+      brandMark="ICO Forge"
+      brandLine="把图片锻成多尺寸图标"
+      brandSub="全程在浏览器本地完成，不上传服务器。"
+      resultTitle="尺寸预览"
+      resultEmpty="选择图片后，各尺寸预览会显示在这里。"
+      resultAction={
+        file ? (
+          <button
+            type="button"
+            className="generate"
+            disabled={!file || busy}
+            onClick={onGenerate}
+          >
+            {busy ? '生成中…' : '下载'}
+          </button>
+        ) : undefined
+      }
+      result={
+        file ? (
+          <>
+            <p className="previews-title">将写入的尺寸（1:1 实际像素）</p>
+            {previews.length > 0 ? (
+              <ul className="ico-preview-list">
+                {previews.map((p, i) => (
+                  <li key={p.size} style={{ animationDelay: `${80 + i * 60}ms` }}>
+                    <div
+                      className="preview-frame"
+                      style={{ width: p.size, height: p.size }}
+                    >
+                      <img
+                        src={p.url}
+                        alt={`${p.size} 像素预览`}
+                        width={p.size}
+                        height={p.size}
+                      />
+                    </div>
+                    <span>{p.size}px</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="wm-hint">预览生成中…</p>
+            )}
+          </>
+        ) : null
+      }
+    >
       <section
         className={`dropzone${dragOver ? ' is-over' : ''}${file ? ' has-file' : ''}`}
         onDragEnter={(e) => {
@@ -202,59 +240,6 @@ export default function IcoPage() {
 
       {error && <p className="error">{error}</p>}
       {status && <p className="status">{status}</p>}
-
-      {file && !drawerOpen && (
-        <div className="actions">
-          <button
-            type="button"
-            className="preview-btn"
-            onClick={() => setDrawerOpen(true)}
-          >
-            查看预览
-          </button>
-        </div>
-      )}
-
-      <PreviewDrawer
-        open={drawerOpen && !!file}
-        title="尺寸预览"
-        onClose={() => setDrawerOpen(false)}
-        wide
-        action={
-          <button
-            type="button"
-            className="generate"
-            disabled={!file || busy}
-            onClick={onGenerate}
-          >
-            {busy ? '生成中…' : '下载'}
-          </button>
-        }
-      >
-        <p className="previews-title">将写入的尺寸（1:1 实际像素）</p>
-        {previews.length > 0 ? (
-          <ul className="ico-preview-list">
-            {previews.map((p, i) => (
-              <li key={p.size} style={{ animationDelay: `${80 + i * 60}ms` }}>
-                <div
-                  className="preview-frame"
-                  style={{ width: p.size, height: p.size }}
-                >
-                  <img
-                    src={p.url}
-                    alt={`${p.size} 像素预览`}
-                    width={p.size}
-                    height={p.size}
-                  />
-                </div>
-                <span>{p.size}px</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="wm-hint">预览生成中…</p>
-        )}
-      </PreviewDrawer>
-    </>
+    </Workbench>
   )
 }

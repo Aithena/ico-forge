@@ -7,7 +7,7 @@ import {
   useTransition,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { PreviewDrawer } from '../components/PreviewDrawer'
+import { Workbench } from '../components/Workbench'
 import { usePasteImage } from '../hooks/usePasteImage'
 import {
   ASPECT_PRESETS,
@@ -63,7 +63,6 @@ export default function CropPage() {
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [layout, setLayout] = useState({
@@ -105,7 +104,6 @@ export default function CropPage() {
     startTransition(() => {
       setError(null)
       setStatus(null)
-      setDrawerOpen(true)
       setCrop(null)
       setZoom(1)
       setPan({ x: 0, y: 0 })
@@ -122,7 +120,6 @@ export default function CropPage() {
       setSourceUrl(null)
       setNatural({ w: 0, h: 0 })
       setCrop(null)
-      setDrawerOpen(false)
       return
     }
     const url = URL.createObjectURL(file)
@@ -475,15 +472,103 @@ export default function CropPage() {
       : undefined
 
   return (
-    <>
-      <header className="brand">
-        <p className="brand-mark">图片裁剪</p>
-        <h1 className="brand-line">常用比例与圆形头像</h1>
-        <p className="brand-sub">
-          小图可增强：标准 / 优秀 / AI 超分（本地免额度）。滚轮按鼠标位置缩放。
-        </p>
-      </header>
+    <Workbench
+      brandMark="图片裁剪"
+      brandLine="常用比例与圆形头像"
+      brandSub="小图可增强：标准 / 优秀 / AI 超分（本地免额度）。滚轮按鼠标位置缩放。"
+      resultTitle={circleMode ? '圆形头像' : '裁剪预览'}
+      resultEmpty="选择图片后，可在右侧拖动裁剪框。"
+      resultFlush
+      resultAction={
+        sourceUrl ? (
+          <button
+            type="button"
+            className="generate"
+            disabled={busy || !previewUrl}
+            onClick={onExport}
+          >
+            {busy ? '处理中…' : '下载'}
+          </button>
+        ) : undefined
+      }
+      result={
+        sourceUrl ? (
+          <div className="result-canvas-stack">
+            <div className="crop-toolbar">
+              <button
+                type="button"
+                className="preview-btn"
+                onClick={() => zoomAt(1 / 1.25)}
+              >
+                缩小
+              </button>
+              <button
+                type="button"
+                className="preview-btn"
+                onClick={() => zoomAt(1.25)}
+              >
+                放大
+              </button>
+              <button
+                type="button"
+                className="preview-btn"
+                onClick={() => fitAndCenter()}
+              >
+                重置 {Math.round(zoom * 100)}%
+              </button>
+            </div>
 
+            <section ref={stageRef} className="crop-stage" aria-label="裁剪区域">
+              <div
+                className="crop-viewport"
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                }}
+              >
+                <img
+                  ref={imgRef}
+                  src={sourceUrl}
+                  alt=""
+                  className="crop-stage-img"
+                  draggable={false}
+                  onLoad={() => fitAndCenter()}
+                />
+
+                {frameStyle && (
+                  <div
+                    className={`crop-frame${circleMode ? ' is-circle' : ''}`}
+                    style={frameStyle}
+                    onPointerDown={beginMove}
+                    title={
+                      aspect === '1:1'
+                        ? '拖动调整；点击切换圆形头像'
+                        : '拖动调整裁剪框'
+                    }
+                  >
+                    <span
+                      className="crop-handle nw"
+                      onPointerDown={(e) => beginResize('nw', e)}
+                    />
+                    <span
+                      className="crop-handle ne"
+                      onPointerDown={(e) => beginResize('ne', e)}
+                    />
+                    <span
+                      className="crop-handle sw"
+                      onPointerDown={(e) => beginResize('sw', e)}
+                    />
+                    <span
+                      className="crop-handle se"
+                      onPointerDown={(e) => beginResize('se', e)}
+                    />
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        ) : null
+      }
+    >
       {!sourceUrl ? (
         <section
           className={`dropzone${dragOver ? ' is-over' : ''}`}
@@ -553,76 +638,7 @@ export default function CropPage() {
             >
               {circleMode ? '圆形头像 · 开' : '圆形头像'}
             </button>
-            <button
-              type="button"
-              className="preview-btn"
-              onClick={() => zoomAt(1 / 1.25)}
-            >
-              缩小
-            </button>
-            <button
-              type="button"
-              className="preview-btn"
-              onClick={() => zoomAt(1.25)}
-            >
-              放大
-            </button>
-            <button
-              type="button"
-              className="preview-btn"
-              onClick={() => fitAndCenter()}
-            >
-              重置 {Math.round(zoom * 100)}%
-            </button>
           </div>
-
-          <section ref={stageRef} className="crop-stage" aria-label="裁剪区域">
-            <div
-              className="crop-viewport"
-              style={{
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-              }}
-            >
-              <img
-                ref={imgRef}
-                src={sourceUrl}
-                alt=""
-                className="crop-stage-img"
-                draggable={false}
-                onLoad={() => fitAndCenter()}
-              />
-
-              {frameStyle && (
-                <div
-                  className={`crop-frame${circleMode ? ' is-circle' : ''}`}
-                  style={frameStyle}
-                  onPointerDown={beginMove}
-                  title={
-                    aspect === '1:1'
-                      ? '拖动调整；点击切换圆形头像'
-                      : '拖动调整裁剪框'
-                  }
-                >
-                  <span
-                    className="crop-handle nw"
-                    onPointerDown={(e) => beginResize('nw', e)}
-                  />
-                  <span
-                    className="crop-handle ne"
-                    onPointerDown={(e) => beginResize('ne', e)}
-                  />
-                  <span
-                    className="crop-handle sw"
-                    onPointerDown={(e) => beginResize('sw', e)}
-                  />
-                  <span
-                    className="crop-handle se"
-                    onPointerDown={(e) => beginResize('se', e)}
-                  />
-                </div>
-              )}
-            </div>
-          </section>
 
           <section className="wm-panel" aria-label="裁剪比例">
             <div className="crop-aspect-row" role="radiogroup" aria-label="比例">
@@ -698,47 +714,11 @@ export default function CropPage() {
               {aspect === '1:1' ? ' 点击裁剪框可切换圆形头像。' : ''}
             </p>
           </section>
-
-          {previewUrl && !drawerOpen && (
-            <div className="actions">
-              <button
-                type="button"
-                className="preview-btn"
-                onClick={() => setDrawerOpen(true)}
-              >
-                查看预览
-              </button>
-            </div>
-          )}
-
-          <PreviewDrawer
-            open={drawerOpen && !!previewUrl}
-            title={circleMode ? '圆形头像预览' : '裁剪预览'}
-            onClose={() => setDrawerOpen(false)}
-            wide
-            action={
-              <button
-                type="button"
-                className="generate"
-                disabled={busy || !previewUrl}
-                onClick={onExport}
-              >
-                {busy ? '处理中…' : '下载'}
-              </button>
-            }
-          >
-            <div className="wm-preview-frame">
-              <img
-                src={previewUrl ?? ''}
-                alt={circleMode ? '圆形头像预览' : '裁剪预览'}
-              />
-            </div>
-          </PreviewDrawer>
         </>
       )}
 
       {error && <p className="error">{error}</p>}
       {status && <p className="status">{status}</p>}
-    </>
+    </Workbench>
   )
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
-import { PreviewDrawer } from '../components/PreviewDrawer'
+import { Workbench } from '../components/Workbench'
 import { usePasteImage } from '../hooks/usePasteImage'
 import { downloadTextFile, pngToSvg } from '../lib/pngToSvg'
 
@@ -18,7 +18,6 @@ export default function PngSvgPage() {
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [, startTransition] = useTransition()
 
   useEffect(() => {
@@ -35,7 +34,6 @@ export default function PngSvgPage() {
   useEffect(() => {
     if (!file) {
       setSvgText(null)
-      setDrawerOpen(false)
       return
     }
 
@@ -44,7 +42,6 @@ export default function PngSvgPage() {
     setError(null)
     setStatus(null)
     setSvgText(null)
-    setDrawerOpen(true)
 
     void pngToSvg(file)
       .then((svg) => {
@@ -90,15 +87,37 @@ export default function PngSvgPage() {
   }
 
   return (
-    <>
-      <header className="brand">
-        <p className="brand-mark">PNG → SVG</p>
-        <h1 className="brand-line">纯色图标转矢量</h1>
-        <p className="brand-sub">
-          适合扁平、纯色、透明底的图标 PNG，建议 512px。全程本地处理。
-        </p>
-      </header>
-
+    <Workbench
+      brandMark="PNG → SVG"
+      brandLine="纯色图标转矢量"
+      brandSub="适合扁平、纯色、透明底的图标 PNG，建议 512px。全程本地处理。"
+      resultTitle="矢量预览"
+      resultEmpty="选择 PNG 后，矢量预览会显示在这里。"
+      resultAction={
+        svgText ? (
+          <button
+            type="button"
+            className="generate"
+            disabled={!file || !svgText || busy}
+            onClick={onConvert}
+          >
+            {busy ? '转换中…' : '下载'}
+          </button>
+        ) : undefined
+      }
+      result={
+        file ? (
+          svgText ? (
+            <div
+              className="svg-preview-frame"
+              dangerouslySetInnerHTML={{ __html: svgText }}
+            />
+          ) : (
+            <p className="wm-hint">{busy ? '转换中…' : '预览生成中…'}</p>
+          )
+        ) : null
+      }
+    >
       <section
         className={`dropzone${dragOver ? ' is-over' : ''}${file ? ' has-file' : ''}`}
         onDragEnter={(e) => {
@@ -155,39 +174,6 @@ export default function PngSvgPage() {
 
       {error && <p className="error">{error}</p>}
       {status && <p className="status">{status}</p>}
-
-      {svgText && !drawerOpen && (
-        <div className="actions">
-          <button
-            type="button"
-            className="preview-btn"
-            onClick={() => setDrawerOpen(true)}
-          >
-            查看预览
-          </button>
-        </div>
-      )}
-
-      <PreviewDrawer
-        open={drawerOpen && !!svgText}
-        title="矢量预览"
-        onClose={() => setDrawerOpen(false)}
-        action={
-          <button
-            type="button"
-            className="generate"
-            disabled={!file || !svgText || busy}
-            onClick={onConvert}
-          >
-            {busy ? '转换中…' : '下载'}
-          </button>
-        }
-      >
-        <div
-          className="svg-preview-frame"
-          dangerouslySetInnerHTML={{ __html: svgText ?? '' }}
-        />
-      </PreviewDrawer>
-    </>
+    </Workbench>
   )
 }

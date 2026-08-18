@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
-import { PreviewDrawer } from '../components/PreviewDrawer'
+import { Workbench } from '../components/Workbench'
 import { usePasteImage } from '../hooks/usePasteImage'
 import {
   DEFAULT_CLARITY,
@@ -24,7 +24,6 @@ export default function ClarityPage() {
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [, startTransition] = useTransition()
 
   const acceptFile = useCallback((next: File | undefined | null) => {
@@ -36,7 +35,6 @@ export default function ClarityPage() {
     startTransition(() => {
       setError(null)
       setStatus(null)
-      setDrawerOpen(true)
       setFile(next)
     })
   }, [])
@@ -56,7 +54,6 @@ export default function ClarityPage() {
   useEffect(() => {
     if (!file) {
       setPreviewUrl(null)
-      setDrawerOpen(false)
       return
     }
 
@@ -124,16 +121,47 @@ export default function ClarityPage() {
   }
 
   return (
-    <>
-      <header className="brand">
-        <p className="brand-mark">图片清晰化</p>
-        <h1 className="brand-line">本地锐化增强</h1>
-        <p className="brand-sub">
-          使用反锐化蒙版提升边缘清晰度。适合轻微发糊；不是 AI
-          超分。支持 Ctrl+V 粘贴。
-        </p>
-      </header>
-
+    <Workbench
+      brandMark="图片清晰化"
+      brandLine="本地锐化增强"
+      brandSub="使用反锐化蒙版提升边缘清晰度。适合轻微发糊；不是 AI 超分。支持 Ctrl+V 粘贴。"
+      resultTitle="对比预览"
+      resultEmpty="选择图片后，原图与清晰化效果会显示在这里。"
+      resultAction={
+        previewUrl ? (
+          <button
+            type="button"
+            className="generate"
+            disabled={busy || !previewUrl}
+            onClick={onExport}
+          >
+            {busy ? '处理中…' : '下载'}
+          </button>
+        ) : undefined
+      }
+      result={
+        sourceUrl ? (
+          previewUrl ? (
+            <div className="clarity-compare-grid">
+              <div>
+                <p className="clarity-compare-label">原图</p>
+                <div className="wm-preview-frame">
+                  <img src={sourceUrl} alt="原图" />
+                </div>
+              </div>
+              <div>
+                <p className="clarity-compare-label">清晰化后</p>
+                <div className="wm-preview-frame">
+                  <img src={previewUrl} alt="清晰化后" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="wm-hint">{busy ? '处理中…' : '预览生成中…'}</p>
+          )
+        ) : null
+      }
+    >
       {!sourceUrl ? (
         <section
           className={`dropzone${dragOver ? ' is-over' : ''}`}
@@ -250,55 +278,11 @@ export default function ClarityPage() {
               </label>
             </div>
           </section>
-
-          {previewUrl && !drawerOpen && (
-            <div className="actions">
-              <button
-                type="button"
-                className="preview-btn"
-                onClick={() => setDrawerOpen(true)}
-              >
-                查看预览
-              </button>
-            </div>
-          )}
-
-          <PreviewDrawer
-            open={drawerOpen && !!sourceUrl && !!previewUrl}
-            title="对比预览"
-            onClose={() => setDrawerOpen(false)}
-            wide
-            action={
-              <button
-                type="button"
-                className="generate"
-                disabled={busy || !previewUrl}
-                onClick={onExport}
-              >
-                {busy ? '处理中…' : '下载'}
-              </button>
-            }
-          >
-            <div className="clarity-compare-grid">
-              <div>
-                <p className="clarity-compare-label">原图</p>
-                <div className="wm-preview-frame">
-                  <img src={sourceUrl ?? ''} alt="原图" />
-                </div>
-              </div>
-              <div>
-                <p className="clarity-compare-label">清晰化后</p>
-                <div className="wm-preview-frame">
-                  <img src={previewUrl ?? ''} alt="清晰化后" />
-                </div>
-              </div>
-            </div>
-          </PreviewDrawer>
         </>
       )}
 
       {error && <p className="error">{error}</p>}
       {status && <p className="status">{status}</p>}
-    </>
+    </Workbench>
   )
 }

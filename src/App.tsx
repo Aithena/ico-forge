@@ -52,6 +52,9 @@ export default function App() {
       <div className="atmosphere" aria-hidden />
 
       <header className="site-header">
+        <a className="site-brand" href="#/ico">
+          图片工具箱
+        </a>
         <nav className="site-nav" aria-label="功能切换">
           {ROUTES.map((item) => (
             <button

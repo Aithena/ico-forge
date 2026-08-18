@@ -7,7 +7,7 @@ import {
   useTransition,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { createPortal } from 'react-dom'
+import { Workbench } from '../components/Workbench'
 import { usePasteImage } from '../hooks/usePasteImage'
 
 type Picked = {
@@ -55,7 +55,6 @@ export default function ColorPickPage() {
   const inputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
-  const panelRef = useRef<HTMLElement>(null)
   const dragRef = useRef<{
     pointerId: number
     startX: number
@@ -69,7 +68,6 @@ export default function ColorPickPage() {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
   const [natural, setNatural] = useState({ w: 0, h: 0 })
   const [picked, setPicked] = useState<Picked | null>(null)
-  const [panelOpen, setPanelOpen] = useState(false)
   const [format, setFormat] = useState<'hex' | 'rgb' | 'rgba'>('hex')
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
@@ -118,7 +116,6 @@ export default function ColorPickPage() {
       setError(null)
       setCopied(null)
       setPicked(null)
-      setPanelOpen(false)
       setFile(next)
       setZoom(1)
       setPan({ x: 0, y: 0 })
@@ -158,15 +155,6 @@ export default function ColorPickPage() {
     img.onerror = () => setError('无法读取图片')
     img.src = sourceUrl
   }, [sourceUrl, centerImage])
-
-  useEffect(() => {
-    if (!panelOpen) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setPanelOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [panelOpen])
 
   const zoomAt = useCallback(
     (factor: number, centerClientX?: number, centerClientY?: number) => {
@@ -249,7 +237,6 @@ export default function ColorPickPage() {
       y,
     }
     setPicked(next)
-    setPanelOpen(true)
 
     const text =
       format === 'hex' ? next.hex : format === 'rgb' ? next.rgb : next.rgba
@@ -308,140 +295,22 @@ export default function ColorPickPage() {
   }
 
   return (
-    <>
-      <header className="brand">
-        <p className="brand-mark">点选取色</p>
-        <h1 className="brand-line">点击图片复制颜色</h1>
-        <p className="brand-sub">
-          支持拖入、选择或 Ctrl+V 粘贴。滚轮缩放，拖动平移，单击取色。
-        </p>
-      </header>
-
-      {!sourceUrl ? (
-        <section
-          className={`dropzone${dragOver ? ' is-over' : ''}`}
-          onDragEnter={(e) => {
-            e.preventDefault()
-            setDragOver(true)
-          }}
-          onDragOver={(e) => {
-            e.preventDefault()
-            setDragOver(true)
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => {
-            e.preventDefault()
-            setDragOver(false)
-            acceptFile(e.dataTransfer.files[0])
-          }}
-          onClick={() => inputRef.current?.click()}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              inputRef.current?.click()
-            }
-          }}
-          role="button"
-          tabIndex={0}
-          aria-controls={inputId}
-          aria-label="选择、拖入或粘贴图片"
-        >
-          <input
-            id={inputId}
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(e) => acceptFile(e.target.files?.[0])}
-          />
-          <div className="drop-empty">
-            <span className="drop-glyph" aria-hidden />
-            <strong>拖入 / 点击 / 粘贴图片</strong>
-            <span>Ctrl+V 即可上传截图</span>
-          </div>
-        </section>
-      ) : (
-        <>
-          <div className="color-toolbar">
-            <button
-              type="button"
-              className="preview-btn"
-              onClick={() => zoomAt(1 / 1.25)}
-            >
-              缩小
-            </button>
-            <button
-              type="button"
-              className="preview-btn"
-              onClick={() => zoomAt(1.25)}
-            >
-              放大
-            </button>
-            <button type="button" className="preview-btn" onClick={resetView}>
-              重置 {Math.round(zoom * 100)}%
-            </button>
-            <button
-              type="button"
-              className="preview-btn"
-              onClick={() => inputRef.current?.click()}
-            >
-              更换图片
-            </button>
-            <input
-              id={inputId}
-              ref={inputRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={(e) => acceptFile(e.target.files?.[0])}
-            />
-          </div>
-
-          <div
-            ref={stageRef}
-            className={`color-stage${panning ? ' is-panning' : ''}`}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            role="img"
-            aria-label="点击取色，滚轮缩放，拖动平移"
-            title="单击取色 · 滚轮缩放 · 拖动平移"
-          >
-            <div
-              className="color-viewport"
-              style={{
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-              }}
-            >
-              <canvas ref={canvasRef} className="color-canvas" />
-            </div>
-          </div>
-        </>
-      )}
-
-      {error && <p className="error">{error}</p>}
-
-      {panelOpen &&
-        picked &&
-        createPortal(
-          <aside
-            ref={panelRef}
-            className="color-drawer"
-            role="dialog"
-            aria-label="取色结果"
-          >
-            <div className="color-drawer-head">
-              <strong>取色结果</strong>
-              <button
-                type="button"
-                className="color-drawer-close"
-                onClick={() => setPanelOpen(false)}
-              >
-                关闭
-              </button>
-            </div>
-
+    <Workbench
+      brandMark="点选取色"
+      brandLine="点击图片复制颜色"
+      brandSub="支持拖入、选择或 Ctrl+V 粘贴。滚轮缩放，拖动平移，单击取色。"
+      resultTitle="取色结果"
+      resultEmpty="在左侧图片上单击取色，结果会显示在这里。"
+      resultAction={
+        picked ? (
+          <button type="button" className="generate" onClick={copyAgain}>
+            复制 {format === 'hex' ? 'HEX' : format === 'rgb' ? 'RGB' : 'RGBA'}
+          </button>
+        ) : undefined
+      }
+      result={
+        picked ? (
+          <aside className="color-result is-inline" aria-label="取色结果">
             <button
               type="button"
               className="color-swatch color-swatch-lg"
@@ -494,15 +363,110 @@ export default function ColorPickPage() {
               位置 {picked.x}, {picked.y}
             </p>
 
-            <button type="button" className="generate" onClick={copyAgain}>
-              复制{' '}
-              {format === 'hex' ? 'HEX' : format === 'rgb' ? 'RGB' : 'RGBA'}
-            </button>
-
             {copied && <p className="status">已复制 {copied}</p>}
-          </aside>,
-          document.body,
+          </aside>
+        ) : null
+      }
+    >
+      <section
+        className={`dropzone${dragOver ? ' is-over' : ''}${sourceUrl ? ' has-file' : ''}`}
+        onDragEnter={(e) => {
+          e.preventDefault()
+          setDragOver(true)
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragOver(true)
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragOver(false)
+          acceptFile(e.dataTransfer.files[0])
+        }}
+        onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            inputRef.current?.click()
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-controls={inputId}
+        aria-label="选择、拖入或粘贴图片"
+      >
+        <input
+          id={inputId}
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => acceptFile(e.target.files?.[0])}
+        />
+        {sourceUrl ? (
+          <div className="drop-preview">
+            <img src={sourceUrl} alt="" />
+            <div className="drop-meta">
+              <strong>{file?.name}</strong>
+              <span>点击或拖入可更换</span>
+            </div>
+          </div>
+        ) : (
+          <div className="drop-empty">
+            <span className="drop-glyph" aria-hidden />
+            <strong>拖入 / 点击 / 粘贴图片</strong>
+            <span>Ctrl+V 即可上传截图</span>
+          </div>
         )}
-    </>
+      </section>
+
+      {sourceUrl && (
+        <>
+          <div className="color-toolbar">
+            <button
+              type="button"
+              className="preview-btn"
+              onClick={() => zoomAt(1 / 1.25)}
+            >
+              缩小
+            </button>
+            <button
+              type="button"
+              className="preview-btn"
+              onClick={() => zoomAt(1.25)}
+            >
+              放大
+            </button>
+            <button type="button" className="preview-btn" onClick={resetView}>
+              重置 {Math.round(zoom * 100)}%
+            </button>
+          </div>
+
+          <div
+            ref={stageRef}
+            className={`color-stage${panning ? ' is-panning' : ''}`}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            role="img"
+            aria-label="点击取色，滚轮缩放，拖动平移"
+            title="单击取色 · 滚轮缩放 · 拖动平移"
+          >
+            <div
+              className="color-viewport"
+              style={{
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              }}
+            >
+              <canvas ref={canvasRef} className="color-canvas" />
+            </div>
+          </div>
+        </>
+      )}
+
+      {error && <p className="error">{error}</p>}
+    </Workbench>
   )
 }
