@@ -1,4 +1,11 @@
 import { Bitmap, traceBitmap, type Path } from '@cadit-app/potrace-ts'
+import { bytesToBlob, optimizeImage } from './pngBase64'
+
+export type PngToSvgResult = {
+  svg: string
+  originalSize: number
+  optimizedSize: number
+}
 
 type Rgb = { r: number; g: number; b: number }
 
@@ -172,9 +179,11 @@ function rgbCss(c: Rgb) {
 /**
  * Trace a solid / flat-color PNG into SVG with Potrace smooth curves.
  * Best for icons with few flat fills and transparent background.
+ * Strips metadata and losslessly re-encodes first, same as Base64.
  */
-export async function pngToSvg(source: Blob): Promise<string> {
-  const img = await loadImage(source)
+export async function pngToSvg(source: Blob): Promise<PngToSvgResult> {
+  const optimized = await optimizeImage(source)
+  const img = await loadImage(bytesToBlob(optimized.bytes, optimized.mime))
   const ow = img.naturalWidth
   const oh = img.naturalHeight
   const canvas = document.createElement('canvas')
@@ -209,10 +218,14 @@ export async function pngToSvg(source: Blob): Promise<string> {
     throw new Error('未能描摹出有效路径')
   }
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  return {
+    svg: `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${ow}" height="${oh}" viewBox="0 0 ${ow} ${oh}">
 ${parts.join('\n')}
-</svg>`
+</svg>`,
+    originalSize: optimized.originalSize,
+    optimizedSize: optimized.bytes.byteLength,
+  }
 }
 
 export function isSvgFile(file: File) {

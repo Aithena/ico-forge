@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
 import { Workbench } from '../components/Workbench'
 import { usePasteImage } from '../hooks/usePasteImage'
+import { formatBytes } from '../lib/pngBase64'
 import {
   downloadBlob,
   encodeIco,
@@ -13,11 +14,6 @@ type Preview = { size: number; url: string }
 
 function stemFromName(name: string) {
   return name.replace(/\.[^.]+$/, '') || 'icon'
-}
-
-function formatBytes(n: number) {
-  if (n < 1024) return `${n} B`
-  return `${(n / 1024).toFixed(1)} KB`
 }
 
 export default function IcoPage() {
@@ -60,7 +56,13 @@ export default function IcoPage() {
 
     makePreviewDataUrls(file, sizes, renderOptions)
       .then((next) => {
-        if (!cancelled) setPreviews(next)
+        if (cancelled) return
+        setPreviews(next.previews)
+        if (next.optimizedSize < next.originalSize) {
+          setStatus(
+            `已丢掉多余字节 ${formatBytes(next.originalSize)} → ${formatBytes(next.optimizedSize)}`,
+          )
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {

@@ -1,3 +1,5 @@
+import { bytesToBlob, optimizeImage } from './pngBase64'
+
 export type FitMode = 'contain' | 'cover'
 
 export interface RenderOptions {
@@ -211,10 +213,16 @@ async function renderSizeCanvases(
   source: Blob,
   sizes: number[],
   options?: FitMode | RenderOptions,
-): Promise<{ size: number; canvas: HTMLCanvasElement }[]> {
+): Promise<{
+  frames: { size: number; canvas: HTMLCanvasElement }[]
+  originalSize: number
+  optimizedSize: number
+}> {
+  const optimized = await optimizeImage(source)
+  const preparedBlob = bytesToBlob(optimized.bytes, optimized.mime)
   const { fit, trim } = normalizeOptions(options)
   const uniqueSizes = [...new Set(sizes)].sort((a, b) => b - a) // largest first
-  const objectUrl = URL.createObjectURL(source)
+  const objectUrl = URL.createObjectURL(preparedBlob)
 
   try {
     const img = await loadImage(objectUrl)
@@ -240,7 +248,11 @@ async function renderSizeCanvases(
       frames.push({ size, canvas })
     }
 
-    return frames
+    return {
+      frames,
+      originalSize: optimized.originalSize,
+      optimizedSize: optimized.bytes.byteLength,
+    }
   } finally {
     URL.revokeObjectURL(objectUrl)
   }
@@ -252,7 +264,7 @@ export async function encodeIco(
   sizes: number[],
   options?: FitMode | RenderOptions,
 ): Promise<Blob> {
-  const frames = await renderSizeCanvases(source, sizes, options)
+  const { frames } = await renderSizeCanvases(source, sizes, options)
   const images: { size: number; data: Uint8Array }[] = []
 
   for (const frame of frames) {
@@ -266,16 +278,28 @@ export async function makePreviewDataUrls(
   source: Blob,
   sizes: number[],
   options?: FitMode | RenderOptions,
-): Promise<{ size: number; url: string }[]> {
+): Promise<{
+  previews: { size: number; url: string }[]
+  originalSize: number
+  optimizedSize: number
+}> {
   // Keep preview order small → large for UI
   const ordered = [...new Set(sizes)].sort((a, b) => a - b)
-  const frames = await renderSizeCanvases(source, ordered, options)
+  const { frames, originalSize, optimizedSize } = await renderSizeCanvases(
+    source,
+    ordered,
+    options,
+  )
   const bySize = new Map(frames.map((f) => [f.size, f.canvas]))
 
-  return ordered.map((size) => {
-    const canvas = bySize.get(size)!
-    return { size, url: canvas.toDataURL('image/png') }
-  })
+  return {
+    previews: ordered.map((size) => {
+      const canvas = bySize.get(size)!
+      return { size, url: canvas.toDataURL('image/png') }
+    }),
+    originalSize,
+    optimizedSize,
+  }
 }
 
 export async function inspectIco(blob: Blob): Promise<IcoEntryInfo[]> {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
 import { Workbench } from '../components/Workbench'
 import { usePasteImage } from '../hooks/usePasteImage'
+import { formatBytes } from '../lib/pngBase64'
 import {
   downloadTextFile,
   extractSvgMarkup,
@@ -68,11 +69,18 @@ export default function PngSvgPage() {
     setSvgText(null)
 
     void pngToSvg(file)
-      .then((svg) => {
+      .then((result) => {
         if (cancelled) return
-        setSvgDraft(svg)
-        setSvgText(svg)
-        setStatus(`预览已就绪（${(svg.length / 1024).toFixed(1)} KB）`)
+        setSvgDraft(result.svg)
+        setSvgText(result.svg)
+        const svgSize = formatBytes(result.svg.length)
+        if (result.optimizedSize < result.originalSize) {
+          setStatus(
+            `已丢掉多余字节 ${formatBytes(result.originalSize)} → ${formatBytes(result.optimizedSize)}，矢量 ${svgSize}`,
+          )
+        } else {
+          setStatus(`预览已就绪（${svgSize}）`)
+        }
       })
       .catch((err: unknown) => {
         if (cancelled) return
