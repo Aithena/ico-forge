@@ -25,6 +25,8 @@ function loadImage(source: Blob): Promise<HTMLImageElement> {
   })
 }
 
+type PaletteColor = Rgb & { n: number }
+
 function quantKey(r: number, g: number, b: number) {
   const q = (v: number) => Math.round(v / 16) * 16
   return `${q(r)},${q(g)},${q(b)}`
@@ -32,6 +34,40 @@ function quantKey(r: number, g: number, b: number) {
 
 function dist2(a: Rgb, b: Rgb) {
   return (a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2
+}
+
+/** Merge buckets split by the 16-step grid, e.g. rgb(18,150,219) vs rgb(18,152,220). */
+function mergePalette(palette: PaletteColor[], maxColors: number, mergeDist = 28) {
+  const limit = mergeDist * mergeDist
+  const merged: PaletteColor[] = []
+  for (const c of palette) {
+    const hit = merged.find((m) => dist2(m, c) <= limit)
+    if (hit) {
+      const tot = hit.n + c.n
+      hit.r = Math.round((hit.r * hit.n + c.r * c.n) / tot)
+      hit.g = Math.round((hit.g * hit.n + c.g * c.n) / tot)
+      hit.b = Math.round((hit.b * hit.n + c.b * c.n) / tot)
+      hit.n = tot
+    } else {
+      merged.push({ ...c })
+    }
+  }
+  merged.sort((a, b) => b.n - a.n)
+  return merged.slice(0, maxColors)
+}
+
+function isCornerBackground(data: ImageData, color: Rgb, alphaCut: number) {
+  const { width, height, data: src } = data
+  const corners = [0, width - 1, (height - 1) * width, height * width - 1]
+  let hits = 0
+  for (const i of corners) {
+    const o = i * 4
+    if (src[o + 3]! < alphaCut) continue
+    if (dist2(color, { r: src[o]!, g: src[o + 1]!, b: src[o + 2]! }) <= 28 * 28) {
+      hits += 1
+    }
+  }
+  return hits >= 3
 }
 
 /** Collect dominant flat colors; snap anti-aliased fringe to nearest. */
@@ -42,9 +78,11 @@ function extractLayers(
   const { width, height } = data
   const src = data.data
   const buckets = new Map<string, { color: Rgb; n: number }>()
+  let opaque = 0
 
   for (let i = 0; i < src.length; i += 4) {
     if (src[i + 3]! < alphaCut) continue
+    opaque += 1
     const color = { r: src[i]!, g: src[i + 1]!, b: src[i + 2]! }
     const key = quantKey(color.r, color.g, color.b)
     const row = buckets.get(key)
@@ -58,21 +96,24 @@ function extractLayers(
     }
   }
 
-  const palette = [...buckets.values()]
-    .map((v) => ({
+  const palette = mergePalette(
+    [...buckets.values()].map((v) => ({
       r: Math.round(v.color.r / v.n),
       g: Math.round(v.color.g / v.n),
       b: Math.round(v.color.b / v.n),
       n: v.n,
-    }))
-    .sort((a, b) => b.n - a.n)
+    })),
+    6,
+  )
 
   if (palette.length === 0) {
     throw new Error('图片几乎全透明，无法转换')
   }
 
-  const keep = palette.slice(0, Math.min(6, palette.length))
-  const masks = keep.map(() => new Uint8Array(width * height))
+  const minPixels = Math.max(16, Math.round(opaque * 0.002))
+  const skipBg =
+    palette[0]!.n > opaque * 0.35 && isCornerBackground(data, palette[0]!, alphaCut)
+  const masks = palette.map(() => new Uint8Array(width * height))
 
   for (let i = 0; i < width * height; i++) {
     const o = i * 4
@@ -80,8 +121,8 @@ function extractLayers(
     const pixel = { r: src[o]!, g: src[o + 1]!, b: src[o + 2]! }
     let best = 0
     let bestD = Infinity
-    for (let c = 0; c < keep.length; c++) {
-      const d = dist2(pixel, keep[c]!)
+    for (let c = 0; c < palette.length; c++) {
+      const d = dist2(pixel, palette[c]!)
       if (d < bestD) {
         bestD = d
         best = c
@@ -90,10 +131,16 @@ function extractLayers(
     masks[best]![i] = 1
   }
 
+  const layers = palette.flatMap((color, idx) => {
+    if (idx === 0 && skipBg) return []
+    if (color.n < minPixels) return []
+    return [{ color, mask: masks[idx]! }]
+  })
+
   return {
     width,
     height,
-    layers: keep.map((color, idx) => ({ color, mask: masks[idx]! })),
+    layers: layers.length > 0 ? layers : [{ color: palette[0]!, mask: masks[0]! }],
   }
 }
 
@@ -123,41 +170,43 @@ function maskToBitmap(mask: Uint8Array, width: number, height: number) {
   return bitmap
 }
 
+function fmtCoord(n: number) {
+  const v = Math.round(n * 100) / 100
+  return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0$/, '')
+}
+
 function curveToPathD(curve: Path['curve'], scale: number): string {
   const n = curve.n
   let p =
     'M' +
-    (curve.c[(n - 1) * 3 + 2]!.x * scale).toFixed(3) +
+    fmtCoord(curve.c[(n - 1) * 3 + 2]!.x * scale) +
     ' ' +
-    (curve.c[(n - 1) * 3 + 2]!.y * scale).toFixed(3) +
-    ' '
+    fmtCoord(curve.c[(n - 1) * 3 + 2]!.y * scale)
   for (let i = 0; i < n; i++) {
     if (curve.tag[i] === 'CURVE') {
       p +=
-        'C ' +
-        (curve.c[i * 3]!.x * scale).toFixed(3) +
+        'C' +
+        fmtCoord(curve.c[i * 3]!.x * scale) +
         ' ' +
-        (curve.c[i * 3]!.y * scale).toFixed(3) +
-        ', ' +
-        (curve.c[i * 3 + 1]!.x * scale).toFixed(3) +
+        fmtCoord(curve.c[i * 3]!.y * scale) +
         ' ' +
-        (curve.c[i * 3 + 1]!.y * scale).toFixed(3) +
-        ', ' +
-        (curve.c[i * 3 + 2]!.x * scale).toFixed(3) +
+        fmtCoord(curve.c[i * 3 + 1]!.x * scale) +
         ' ' +
-        (curve.c[i * 3 + 2]!.y * scale).toFixed(3) +
-        ' '
+        fmtCoord(curve.c[i * 3 + 1]!.y * scale) +
+        ' ' +
+        fmtCoord(curve.c[i * 3 + 2]!.x * scale) +
+        ' ' +
+        fmtCoord(curve.c[i * 3 + 2]!.y * scale)
     } else if (curve.tag[i] === 'CORNER') {
       p +=
-        'L ' +
-        (curve.c[i * 3 + 1]!.x * scale).toFixed(3) +
+        'L' +
+        fmtCoord(curve.c[i * 3 + 1]!.x * scale) +
         ' ' +
-        (curve.c[i * 3 + 1]!.y * scale).toFixed(3) +
+        fmtCoord(curve.c[i * 3 + 1]!.y * scale) +
         ' ' +
-        (curve.c[i * 3 + 2]!.x * scale).toFixed(3) +
+        fmtCoord(curve.c[i * 3 + 2]!.x * scale) +
         ' ' +
-        (curve.c[i * 3 + 2]!.y * scale).toFixed(3) +
-        ' '
+        fmtCoord(curve.c[i * 3 + 2]!.y * scale)
     }
   }
   return p
@@ -198,7 +247,6 @@ export async function pngToSvg(source: Blob): Promise<PngToSvgResult> {
   const { layers } = extractLayers(raw)
   const factor = ow <= 64 ? 8 : ow <= 128 ? 4 : ow <= 256 ? 2 : 1
   const scaleBack = 1 / factor
-
   const parts: string[] = []
   for (const layer of layers) {
     const scaled = upscaleMask(layer.mask, ow, oh, factor)
@@ -208,7 +256,7 @@ export async function pngToSvg(source: Blob): Promise<PngToSvgResult> {
       turdsize: Math.max(2, factor),
       optcurve: true,
       alphamax: 0.9,
-      opttolerance: 0.2,
+      opttolerance: 0.4,
     })
     const el = pathsToElement(paths, rgbCss(layer.color), scaleBack)
     if (el) parts.push(el)
