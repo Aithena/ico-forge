@@ -252,7 +252,7 @@ export async function pngToSvg(source: Blob): Promise<PngToSvgResult> {
   const { layers } = extractLayers(raw)
   const factor = ow <= 64 ? 8 : ow <= 128 ? 4 : ow <= 256 ? 2 : 1
   const longest = Math.max(ow, oh)
-  const vbMax = 24
+  const vbMax = 128
   const vbScale = longest > vbMax ? vbMax / longest : 1
   const vw = fmtCoord(ow * vbScale)
   const vh = fmtCoord(oh * vbScale)
