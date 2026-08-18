@@ -636,7 +636,8 @@
 }
 
 .preview-drawer .svg-preview-frame,
-.preview-drawer .wm-preview-frame {
+.preview-drawer .wm-preview-frame,
+.preview-drawer .code-preview {
   margin: 0;
 }
 

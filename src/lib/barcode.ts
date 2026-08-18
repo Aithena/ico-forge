@@ -75,8 +75,9 @@ function drawCenterLogo(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
   canvasSize: number,
+  badgeRatio = QR_LOGO_RATIO,
 ) {
-  const badge = Math.max(24, Math.round(canvasSize * QR_LOGO_RATIO))
+  const badge = Math.max(24, Math.round(canvasSize * badgeRatio))
   const pad = Math.max(4, Math.round(badge * 0.12))
   const radius = Math.min(QR_LOGO_RADIUS, Math.floor(badge / 2))
   const x = (canvasSize - badge) / 2
@@ -190,51 +191,145 @@ function makeQrFill(
   return g
 }
 
-function recolorQr(canvas: HTMLCanvasElement, colors: QrColors) {
-  const w = canvas.width
-  const h = canvas.height
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) throw new Error('无法着色二维码')
+export type QrShape = 'square' | 'rounded' | 'dots' | 'circle' | 'sun'
 
-  const src = ctx.getImageData(0, 0, w, h)
-  const mask = document.createElement('canvas')
-  mask.width = w
-  mask.height = h
-  const mctx = mask.getContext('2d')
-  if (!mctx) throw new Error('无法着色二维码')
-  const mid = mctx.createImageData(w, h)
-  const pixels = src.data
-  const out = mid.data
-  for (let i = 0; i < pixels.length; i += 4) {
-    const lum =
-      (pixels[i] ?? 0) * 0.299 +
-      (pixels[i + 1] ?? 0) * 0.587 +
-      (pixels[i + 2] ?? 0) * 0.114
-    if (lum < 128) {
-      out[i] = 0
-      out[i + 1] = 0
-      out[i + 2] = 0
-      out[i + 3] = 255
+export const QR_SHAPES: { id: QrShape; label: string }[] = [
+  { id: 'square', label: '方形' },
+  { id: 'rounded', label: '圆角' },
+  { id: 'dots', label: '圆点' },
+  { id: 'circle', label: '圆形' },
+  { id: 'sun', label: '太阳码风' },
+]
+
+function fillRoundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  ctx.beginPath()
+  if (r <= 0) ctx.rect(x, y, w, h)
+  else ctx.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2))
+  ctx.fill()
+}
+
+function inFinder(row: number, col: number, n: number) {
+  const hit = (r: number, c: number) => r >= 0 && r < 7 && c >= 0 && c < 7
+  return hit(row, col) || hit(row, col - (n - 7)) || hit(row - (n - 7), col)
+}
+
+function drawFinder(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  cell: number,
+  rounded: boolean,
+  fg: string | CanvasGradient,
+  bg: string,
+) {
+  const r = rounded ? cell * 0.4 : 0
+  ctx.fillStyle = fg
+  fillRoundRect(ctx, x, y, cell * 7, cell * 7, r)
+  ctx.fillStyle = bg
+  fillRoundRect(
+    ctx,
+    x + cell,
+    y + cell,
+    cell * 5,
+    cell * 5,
+    Math.max(0, r - cell * 0.15),
+  )
+  ctx.fillStyle = fg
+  fillRoundRect(
+    ctx,
+    x + cell * 2,
+    y + cell * 2,
+    cell * 3,
+    cell * 3,
+    Math.max(0, r - cell * 0.35),
+  )
+}
+
+function drawSunburst(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  color: string,
+) {
+  const cx = size / 2
+  const cy = size / 2
+  const outer = size / 2 - 1
+  const inner = outer * 0.9
+  ctx.save()
+  ctx.strokeStyle = color
+  ctx.lineWidth = Math.max(1.25, size * 0.01)
+  ctx.lineCap = 'round'
+  const rays = 40
+  for (let i = 0; i < rays; i++) {
+    const a = (i / rays) * Math.PI * 2
+    ctx.beginPath()
+    ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner)
+    ctx.lineTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer)
+    ctx.stroke()
+  }
+  ctx.beginPath()
+  ctx.arc(cx, cy, inner - ctx.lineWidth, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawQrModules(
+  ctx: CanvasRenderingContext2D,
+  modules: { size: number; get: (row: number, col: number) => number },
+  box: { x: number; y: number; size: number },
+  shape: QrShape,
+  colors: QrColors,
+  fg: string | CanvasGradient,
+) {
+  const n = modules.size
+  const margin = 2
+  const total = n + margin * 2
+  const cell = box.size / total
+  const rounded = shape !== 'square'
+  const dotted = shape === 'dots' || shape === 'circle' || shape === 'sun'
+
+  const finderOrigins: [number, number][] = [
+    [0, 0],
+    [0, n - 7],
+    [n - 7, 0],
+  ]
+  for (const [row, col] of finderOrigins) {
+    drawFinder(
+      ctx,
+      box.x + (col + margin) * cell,
+      box.y + (row + margin) * cell,
+      cell,
+      rounded,
+      fg,
+      colors.bg,
+    )
+  }
+
+  ctx.fillStyle = fg
+  for (let row = 0; row < n; row++) {
+    for (let col = 0; col < n; col++) {
+      if (inFinder(row, col, n)) continue
+      if (!modules.get(row, col)) continue
+      const x = box.x + (col + margin) * cell
+      const y = box.y + (row + margin) * cell
+      if (dotted) {
+        ctx.beginPath()
+        ctx.arc(x + cell / 2, y + cell / 2, cell * 0.4, 0, Math.PI * 2)
+        ctx.fill()
+      } else if (rounded) {
+        const pad = cell * 0.08
+        fillRoundRect(ctx, x + pad, y + pad, cell - pad * 2, cell - pad * 2, cell * 0.28)
+      } else {
+        ctx.fillRect(x, y, cell + 0.4, cell + 0.4)
+      }
     }
   }
-  mctx.putImageData(mid, 0, 0)
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0)
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.fillStyle = colors.bg
-  ctx.fillRect(0, 0, w, h)
-
-  const fg = document.createElement('canvas')
-  fg.width = w
-  fg.height = h
-  const fctx = fg.getContext('2d')
-  if (!fctx) throw new Error('无法着色二维码')
-  fctx.fillStyle = makeQrFill(fctx, colors, w, h)
-  fctx.fillRect(0, 0, w, h)
-  fctx.globalCompositeOperation = 'destination-in'
-  fctx.drawImage(mask, 0, 0)
-
-  ctx.drawImage(fg, 0, 0)
 }
 
 export async function generateQrPng(options: {
@@ -243,31 +338,54 @@ export async function generateQrPng(options: {
   ecc: QrEcc
   logo?: Blob | null
   colors?: QrColors
+  shape?: QrShape
 }): Promise<{ blob: Blob; previewUrl: string; width: number; height: number }> {
   const text = options.text.trim()
   if (!text) throw new Error('请输入要编码的内容')
 
-  const { toCanvas } = await import('qrcode')
-  const canvas = document.createElement('canvas')
-  const ecc = options.logo ? 'H' : options.ecc
-  await toCanvas(canvas, text, {
-    width: options.size,
-    margin: 2,
-    errorCorrectionLevel: ecc,
-    color: {
-      dark: '#000000',
-      light: '#ffffff',
-    },
-  })
+  const shape = options.shape ?? 'square'
+  const colors = options.colors ?? DEFAULT_QR_COLORS
+  const circular = shape === 'circle' || shape === 'sun'
+  const ecc: QrEcc = options.logo || circular ? 'H' : options.ecc
 
-  recolorQr(canvas, options.colors ?? DEFAULT_QR_COLORS)
+  const { create } = await import('qrcode')
+  const qr = create(text, { errorCorrectionLevel: ecc })
+  const size = options.size
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('无法绘制二维码')
+
+  const fg = makeQrFill(ctx, colors, size, size)
+
+  if (circular) {
+    ctx.clearRect(0, 0, size, size)
+    ctx.beginPath()
+    ctx.arc(size / 2, size / 2, size / 2 - 0.5, 0, Math.PI * 2)
+    ctx.fillStyle = colors.bg
+    ctx.fill()
+    if (shape === 'sun') drawSunburst(ctx, size, colors.fg)
+    const inner = Math.floor(size * (shape === 'sun' ? 0.62 : 0.7))
+    const origin = (size - inner) / 2
+    drawQrModules(
+      ctx,
+      qr.modules,
+      { x: origin, y: origin, size: inner },
+      shape,
+      colors,
+      fg,
+    )
+  } else {
+    ctx.fillStyle = colors.bg
+    ctx.fillRect(0, 0, size, size)
+    drawQrModules(ctx, qr.modules, { x: 0, y: 0, size }, shape, colors, fg)
+  }
 
   if (options.logo) {
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('无法绘制中心图片')
     const { img, url } = await loadImage(options.logo)
     try {
-      drawCenterLogo(ctx, img, canvas.width)
+      drawCenterLogo(ctx, img, size, circular ? 0.16 : QR_LOGO_RATIO)
     } finally {
       URL.revokeObjectURL(url)
     }

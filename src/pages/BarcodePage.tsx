@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
+import { PreviewDrawer } from '../components/PreviewDrawer'
 import { usePasteImage } from '../hooks/usePasteImage'
 import {
   BARCODE_FORMATS,
@@ -11,10 +12,12 @@ import {
   looksLikeHttpUrl,
   qrContrastHint,
   QR_GRADIENT_DIRS,
+  QR_SHAPES,
   type BarcodeFormatId,
   type DecodeResult,
   type QrColors,
   type QrEcc,
+  type QrShape,
 } from '../lib/barcode'
 
 type Mode = 'qr-gen' | 'barcode-gen' | 'qr-decode' | 'barcode-decode'
@@ -50,6 +53,7 @@ export default function BarcodePage() {
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [qrColors, setQrColors] = useState<QrColors>(DEFAULT_QR_COLORS)
+  const [qrShape, setQrShape] = useState<QrShape>('square')
   const [barcodeText, setBarcodeText] = useState('')
   const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormatId>('CODE128')
   const [displayValue, setDisplayValue] = useState(true)
@@ -63,11 +67,15 @@ export default function BarcodePage() {
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const previewOpenedRef = useRef(false)
   const [, startTransition] = useTransition()
 
   const formatMeta =
     BARCODE_FORMATS.find((f) => f.id === barcodeFormat) ?? BARCODE_FORMATS[0]!
   const contrastHint = qrContrastHint(qrColors)
+  const lockHighEcc =
+    !!logoFile || qrShape === 'circle' || qrShape === 'sun'
 
   const acceptFile = useCallback((next: File | undefined | null) => {
     if (!next) return
@@ -79,6 +87,7 @@ export default function BarcodePage() {
       setError(null)
       setStatus(null)
       setDecoded(null)
+      setDrawerOpen(true)
       setFile(next)
     })
   }, [])
@@ -134,6 +143,8 @@ export default function BarcodePage() {
       })
       setPreviewBlob(null)
       setBusy(false)
+      previewOpenedRef.current = false
+      setDrawerOpen(false)
       return
     }
 
@@ -147,6 +158,7 @@ export default function BarcodePage() {
         ecc: qrEcc,
         logo: logoFile,
         colors: qrColors,
+        shape: qrShape,
       })
         .then((result) => {
           if (cancelled) {
@@ -158,6 +170,10 @@ export default function BarcodePage() {
             return result.previewUrl
           })
           setPreviewBlob(result.blob)
+          if (!previewOpenedRef.current) {
+            previewOpenedRef.current = true
+            setDrawerOpen(true)
+          }
         })
         .catch((err: unknown) => {
           if (cancelled) return
@@ -177,7 +193,7 @@ export default function BarcodePage() {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [mode, qrText, qrSize, qrEcc, logoFile, qrColors])
+  }, [mode, qrText, qrSize, qrEcc, logoFile, qrColors, qrShape])
 
   useEffect(() => {
     if (mode !== 'barcode-gen') return
@@ -190,6 +206,8 @@ export default function BarcodePage() {
       })
       setPreviewBlob(null)
       setBusy(false)
+      previewOpenedRef.current = false
+      setDrawerOpen(false)
       return
     }
 
@@ -212,6 +230,10 @@ export default function BarcodePage() {
             return result.previewUrl
           })
           setPreviewBlob(result.blob)
+          if (!previewOpenedRef.current) {
+            previewOpenedRef.current = true
+            setDrawerOpen(true)
+          }
         })
         .catch((err: unknown) => {
           if (cancelled) return
@@ -250,6 +272,7 @@ export default function BarcodePage() {
         if (cancelled) return
         setDecoded(result)
         setStatus(null)
+        setDrawerOpen(true)
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -268,6 +291,8 @@ export default function BarcodePage() {
     setMode(next)
     setError(null)
     setStatus(null)
+    setDrawerOpen(false)
+    previewOpenedRef.current = false
     if (!isDecode(next)) {
       setFile(null)
       setDecoded(null)
@@ -349,6 +374,31 @@ export default function BarcodePage() {
               />
             </label>
             <div className="wm-field">
+              <span>形状</span>
+              <div className="color-formats" role="radiogroup" aria-label="二维码形状">
+                {QR_SHAPES.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={qrShape === item.id}
+                    className={qrShape === item.id ? 'is-selected' : undefined}
+                    onClick={() => {
+                      setQrShape(item.id)
+                      if (item.id === 'circle' || item.id === 'sun') setQrEcc('H')
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              {(qrShape === 'circle' || qrShape === 'sun') && (
+                <p className="wm-hint">
+                  仍是标准二维码，可被微信、相机扫码。微信小程序太阳码需官方接口，无法本地生成。
+                </p>
+              )}
+            </div>
+            <div className="wm-field">
               <span>颜色</span>
               <div className="color-formats" role="radiogroup" aria-label="着色方式">
                 <button
@@ -428,7 +478,7 @@ export default function BarcodePage() {
             )}
             {contrastHint && <p className="wm-hint">{contrastHint}</p>}
             <div className="wm-field">
-              <span>容错{logoFile ? '（中心图需高容错）' : ''}</span>
+              <span>容错{lockHighEcc ? '（当前样式需高容错）' : ''}</span>
               <div className="color-formats" role="radiogroup" aria-label="容错级别">
                 {ECC_OPTIONS.map((item) => (
                   <button
@@ -437,7 +487,7 @@ export default function BarcodePage() {
                     role="radio"
                     aria-checked={qrEcc === item.id}
                     className={qrEcc === item.id ? 'is-selected' : undefined}
-                    disabled={!!logoFile && item.id !== 'H'}
+                    disabled={lockHighEcc && item.id !== 'H'}
                     onClick={() => setQrEcc(item.id)}
                   >
                     {item.label}
@@ -527,31 +577,16 @@ export default function BarcodePage() {
         </section>
       )}
 
-      {(mode === 'qr-gen' || mode === 'barcode-gen') && (
-        <>
-          <div className="code-preview">
-            {previewUrl ? (
-              <img
-                src={previewUrl}
-                alt={mode === 'qr-gen' ? '二维码预览' : '条形码预览'}
-              />
-            ) : (
-              <p className="wm-hint">
-                {busy ? '生成中…' : '输入内容后将在此预览'}
-              </p>
-            )}
-          </div>
-          <div className="actions">
-            <button
-              type="button"
-              className="generate"
-              disabled={!previewBlob || busy}
-              onClick={onDownload}
-            >
-              {busy ? '生成中…' : '下载 PNG'}
-            </button>
-          </div>
-        </>
+      {(mode === 'qr-gen' || mode === 'barcode-gen') && previewUrl && !drawerOpen && (
+        <div className="actions">
+          <button
+            type="button"
+            className="preview-btn"
+            onClick={() => setDrawerOpen(true)}
+          >
+            查看预览
+          </button>
+        </div>
       )}
 
       {isDecode(mode) && !sourceUrl && (
@@ -630,28 +665,78 @@ export default function BarcodePage() {
             />
           </div>
 
+          {decoded && !drawerOpen && (
+            <div className="actions">
+              <button
+                type="button"
+                className="preview-btn"
+                onClick={() => setDrawerOpen(true)}
+              >
+                查看结果
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {(mode === 'qr-gen' || mode === 'barcode-gen') && (
+        <PreviewDrawer
+          open={drawerOpen && !!previewUrl}
+          title={mode === 'qr-gen' ? '二维码预览' : '条形码预览'}
+          onClose={() => setDrawerOpen(false)}
+          action={
+            <button
+              type="button"
+              className="generate"
+              disabled={!previewBlob || busy}
+              onClick={onDownload}
+            >
+              {busy ? '生成中…' : '下载'}
+            </button>
+          }
+        >
+          <div className="code-preview">
+            <img
+              src={previewUrl ?? ''}
+              alt={mode === 'qr-gen' ? '二维码预览' : '条形码预览'}
+            />
+          </div>
+        </PreviewDrawer>
+      )}
+
+      {isDecode(mode) && (
+        <PreviewDrawer
+          open={drawerOpen && !!decoded}
+          title="识别结果"
+          onClose={() => setDrawerOpen(false)}
+          action={
+            <button type="button" className="generate" onClick={onCopyDecoded}>
+              复制内容
+            </button>
+          }
+        >
+          {sourceUrl && (
+            <div className="wm-preview-frame">
+              <img src={sourceUrl} alt="识别原图" />
+            </div>
+          )}
           {decoded && (
             <section className="code-result" aria-label="识别结果">
               <p className="previews-title">{decoded.format}</p>
               <pre>{decoded.text}</pre>
-              <div className="actions">
-                <button type="button" className="generate" onClick={onCopyDecoded}>
-                  复制内容
-                </button>
-                {looksLikeHttpUrl(decoded.text) && (
-                  <a
-                    className="preview-btn code-open-link"
-                    href={decoded.text.trim()}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    打开链接
-                  </a>
-                )}
-              </div>
+              {looksLikeHttpUrl(decoded.text) && (
+                <a
+                  className="preview-btn code-open-link"
+                  href={decoded.text.trim()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  打开链接
+                </a>
+              )}
             </section>
           )}
-        </>
+        </PreviewDrawer>
       )}
 
       {error && <p className="error">{error}</p>}
