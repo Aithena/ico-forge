@@ -41,7 +41,7 @@ function copyUpscaleAssets() {
 }
 
 function resolveAiFile(urlPath: string): string | null {
-  // urlPath like /ico-forge/ai/js/foo.mjs or /ai/js/foo.mjs
+  // urlPath like /img-tools/ai/js/foo.mjs or /ai/js/foo.mjs
   const marker = '/ai/'
   const idx = urlPath.indexOf(marker)
   if (idx < 0) return null
@@ -99,9 +99,9 @@ function serveAiAssets(): Plugin {
   }
 }
 
-// GitHub Pages project site: https://<user>.github.io/ico-forge/
+// GitHub Pages project site: https://<user>.github.io/img-tools/
 export default defineConfig({
-  base: '/ico-forge/',
+  base: '/img-tools/',
   plugins: [react(), serveAiAssets()],
   server: {
     port: 18808,
