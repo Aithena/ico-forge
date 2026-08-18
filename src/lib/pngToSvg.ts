@@ -215,6 +215,33 @@ ${parts.join('\n')}
 </svg>`
 }
 
+export function isSvgFile(file: File) {
+  return file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)
+}
+
+/** Pull a complete <svg>…</svg> document out of pasted text or markdown fences. */
+export function extractSvgMarkup(text: string): string | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+
+  let body = trimmed
+  const fenced = body.match(/^```(?:svg|xml)?\s*\r?\n?([\s\S]*?)\s*```$/i)
+  if (fenced?.[1]) body = fenced[1].trim()
+
+  const start = body.search(/<svg(\s|>)/i)
+  if (start < 0) return null
+  const end = body.toLowerCase().lastIndexOf('</svg>')
+  if (end < start) return null
+
+  let svg = body.slice(start, end + '</svg>'.length)
+  const gt = svg.indexOf('>')
+  const openTag = gt >= 0 ? svg.slice(0, gt) : svg
+  if (!/\sxmlns\s*=/i.test(openTag)) {
+    svg = svg.replace(/<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"')
+  }
+  return svg
+}
+
 export function downloadTextFile(content: string, filename: string) {
   const blob = new Blob([content], { type: 'image/svg+xml;charset=utf-8' })
   const url = URL.createObjectURL(blob)
