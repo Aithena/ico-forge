@@ -251,7 +251,12 @@ export async function pngToSvg(source: Blob): Promise<PngToSvgResult> {
 
   const { layers } = extractLayers(raw)
   const factor = ow <= 64 ? 8 : ow <= 128 ? 4 : ow <= 256 ? 2 : 1
-  const scaleBack = 1 / factor
+  const longest = Math.max(ow, oh)
+  const vbMax = 24
+  const vbScale = longest > vbMax ? vbMax / longest : 1
+  const vw = fmtCoord(ow * vbScale)
+  const vh = fmtCoord(oh * vbScale)
+  const scaleBack = vbScale / factor
   const parts: string[] = []
   for (const layer of layers) {
     const scaled = upscaleMask(layer.mask, ow, oh, factor)
@@ -271,7 +276,7 @@ export async function pngToSvg(source: Blob): Promise<PngToSvgResult> {
     throw new Error('未能描摹出有效路径')
   }
 
-  const rawSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${ow}" height="${oh}" viewBox="0 0 ${ow} ${oh}">${parts.join('')}</svg>`
+  const rawSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${ow}" height="${oh}" viewBox="0 0 ${vw} ${vh}">${parts.join('')}</svg>`
   let svg = rawSvg
   try {
     svg = compressSvg(rawSvg)
