@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import BarcodePage from './pages/BarcodePage'
+import Base64Page from './pages/Base64Page'
 import ClarityPage from './pages/ClarityPage'
 import ColorPickPage from './pages/ColorPickPage'
 import CropPage from './pages/CropPage'
@@ -11,6 +12,7 @@ import './App.css'
 type Route =
   | 'ico'
   | 'png-svg'
+  | 'base64'
   | 'color-pick'
   | 'watermark'
   | 'clarity'
@@ -20,6 +22,7 @@ type Route =
 function routeFromHash(): Route {
   const raw = window.location.hash.replace(/^#\/?/, '')
   if (raw === 'png-svg') return 'png-svg'
+  if (raw === 'base64') return 'base64'
   if (raw === 'color-pick') return 'color-pick'
   if (raw === 'watermark') return 'watermark'
   if (raw === 'clarity') return 'clarity'
@@ -31,6 +34,7 @@ function routeFromHash(): Route {
 const ROUTES: { id: Route; hash: string; label: string }[] = [
   { id: 'ico', hash: '#/ico', label: '图片转 ICO' },
   { id: 'png-svg', hash: '#/png-svg', label: 'PNG 转 SVG' },
+  { id: 'base64', hash: '#/base64', label: '转 Base64' },
   { id: 'color-pick', hash: '#/color-pick', label: '点选取色' },
   { id: 'watermark', hash: '#/watermark', label: '加水印' },
   { id: 'clarity', hash: '#/clarity', label: '图片清晰化' },
@@ -74,6 +78,7 @@ export default function App() {
       <main className="stage">
         {route === 'ico' && <IcoPage />}
         {route === 'png-svg' && <PngSvgPage />}
+        {route === 'base64' && <Base64Page />}
         {route === 'color-pick' && <ColorPickPage />}
         {route === 'watermark' && <WatermarkPage />}
         {route === 'clarity' && <ClarityPage />}

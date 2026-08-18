@@ -276,7 +276,8 @@
 
 .result-pane .svg-preview-frame,
 .result-pane .wm-preview-frame,
-.result-pane .code-preview {
+.result-pane .code-preview,
+.result-pane .b64-preview-frame {
   margin: 0;
 }
 
@@ -1343,6 +1344,54 @@
 .code-preview img {
   max-width: min(100%, 420px);
   height: auto;
+}
+
+.b64-preview-frame {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.25rem;
+  background:
+    linear-gradient(45deg, #d9e1e8 25%, transparent 25%) 0 0 / 12px 12px,
+    linear-gradient(-45deg, #d9e1e8 25%, transparent 25%) 0 6px / 12px 12px,
+    linear-gradient(45deg, transparent 75%, #d9e1e8 75%) 6px -6px / 12px 12px,
+    linear-gradient(-45deg, transparent 75%, #d9e1e8 75%) -6px 0 / 12px 12px,
+    #f7fafc;
+  display: grid;
+  place-items: center;
+  min-height: 140px;
+  animation: rise 0.55s ease both;
+}
+
+.b64-preview-frame img {
+  max-width: min(100%, 280px);
+  max-height: 220px;
+  height: auto;
+  object-fit: contain;
+}
+
+.b64-preview-frame img.is-icon {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.b64-stats {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.b64-stats strong {
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+.b64-output {
+  max-height: 260px;
+  overflow: auto;
+  user-select: all;
 }
 
 .code-result {
