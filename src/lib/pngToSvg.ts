@@ -218,11 +218,16 @@ function pathsToElement(paths: Path[], fill: string, scale: number): string {
   for (const path of paths) {
     d += curveToPathD(path.curve, scale)
   }
-  return `<path d="${d}" fill="${fill}" fill-rule="evenodd"/>`
+  return `<path d="${compactPathD(d)}" fill="${fill}" fill-rule="evenodd"/>`
 }
 
-function rgbCss(c: Rgb) {
-  return `rgb(${c.r},${c.g},${c.b})`
+function hexColor(c: Rgb) {
+  const h = (n: number) => n.toString(16).padStart(2, '0')
+  const hex = `${h(c.r)}${h(c.g)}${h(c.b)}`
+  if (hex[0] === hex[1] && hex[2] === hex[3] && hex[4] === hex[5]) {
+    return `#${hex[0]}${hex[2]}${hex[4]}`
+  }
+  return `#${hex}`
 }
 
 /**
@@ -258,7 +263,7 @@ export async function pngToSvg(source: Blob): Promise<PngToSvgResult> {
       alphamax: 0.9,
       opttolerance: 0.4,
     })
-    const el = pathsToElement(paths, rgbCss(layer.color), scaleBack)
+    const el = pathsToElement(paths, hexColor(layer.color), scaleBack)
     if (el) parts.push(el)
   }
 
@@ -266,11 +271,16 @@ export async function pngToSvg(source: Blob): Promise<PngToSvgResult> {
     throw new Error('未能描摹出有效路径')
   }
 
+  const rawSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${ow}" height="${oh}" viewBox="0 0 ${ow} ${oh}">${parts.join('')}</svg>`
+  let svg = rawSvg
+  try {
+    svg = compressSvg(rawSvg)
+  } catch {
+    // keep the already-compact generated markup
+  }
+
   return {
-    svg: `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${ow}" height="${oh}" viewBox="0 0 ${ow} ${oh}">
-${parts.join('\n')}
-</svg>`,
+    svg,
     originalSize: optimized.originalSize,
     optimizedSize: optimized.bytes.byteLength,
   }
