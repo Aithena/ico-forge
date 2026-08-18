@@ -255,6 +255,167 @@ export function extractSvgMarkup(text: string): string | null {
   return svg
 }
 
+const SVG_TEXT_TAGS = new Set([
+  'text',
+  'tspan',
+  'textpath',
+  'title',
+  'desc',
+  'style',
+  'script',
+  'a',
+])
+
+function parseSvgRoot(text: string): Element {
+  const markup = extractSvgMarkup(text)
+  if (!markup) throw new Error('没有找到可用的 SVG 代码')
+  const doc = new DOMParser().parseFromString(markup, 'image/svg+xml')
+  if (doc.querySelector('parsererror')) throw new Error('SVG 无法解析')
+  const root = doc.documentElement
+  if (root.localName.toLowerCase() !== 'svg') throw new Error('根节点不是 svg')
+  return root
+}
+
+function pruneLayoutWhitespace(node: Node) {
+  const parentName =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as Element).localName.toLowerCase()
+      : ''
+  const keepText = SVG_TEXT_TAGS.has(parentName)
+
+  for (const child of [...node.childNodes]) {
+    if (child.nodeType === Node.COMMENT_NODE) {
+      node.removeChild(child)
+      continue
+    }
+    if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) {
+      if (!keepText && !child.textContent?.trim()) {
+        node.removeChild(child)
+      }
+      continue
+    }
+    if (child.nodeType === Node.ELEMENT_NODE) pruneLayoutWhitespace(child)
+  }
+}
+
+function compactNumericToken(raw: string) {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return raw
+  const rounded = Math.round(n * 1000) / 1000
+  if (Object.is(rounded, -0) || rounded === 0) return '0'
+  return String(rounded)
+}
+
+function compactNumericString(value: string) {
+  let next = value.replace(
+    /-?(?:\d*\.\d+|\d+)(?:e[-+]?\d+)?/gi,
+    compactNumericToken,
+  )
+  next = next.replace(/\s+/g, ' ').trim()
+  next = next
+    .replace(/\s*([MmLlHhVvCcSsQqTtAaZz,])\s*/g, '$1')
+    .replace(/,/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return next
+}
+
+function isEditorAttribute(name: string) {
+  return /^(inkscape|sodipodi|serif|sketch):/i.test(name)
+}
+
+function compactSvgTree(el: Element) {
+  for (const attr of [...el.attributes]) {
+    if (isEditorAttribute(attr.name)) {
+      el.removeAttribute(attr.name)
+      continue
+    }
+    if (/^(id|class|href|xlink:href|xmlns(:.*)?|xml:space)$/i.test(attr.name)) {
+      continue
+    }
+    const compacted = compactNumericString(attr.value)
+    if (compacted !== attr.value) el.setAttribute(attr.name, compacted)
+  }
+  for (const child of [...el.children]) compactSvgTree(child)
+}
+
+function escapeXml(value: string, attr = false) {
+  let out = value.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  if (attr) return out.replace(/"/g, '&quot;')
+  return out.replace(/>/g, '&gt;')
+}
+
+function serializeAttrs(el: Element) {
+  return [...el.attributes]
+    .map((attr) => ` ${attr.name}="${escapeXml(attr.value, true)}"`)
+    .join('')
+}
+
+function serializeNode(node: Node, pretty: boolean, depth: number): string {
+  if (node.nodeType === Node.TEXT_NODE || node.nodeType === Node.CDATA_SECTION_NODE) {
+    const text = node.textContent ?? ''
+    if (!pretty) return escapeXml(text)
+    const pad = '  '.repeat(depth)
+    const trimmed = text.trim()
+    return trimmed ? `${pad}${escapeXml(trimmed)}` : ''
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return ''
+
+  const el = node as Element
+  const name = el.tagName
+  const attrs = serializeAttrs(el)
+  const kids = [...el.childNodes].filter((child) => {
+    if (child.nodeType === Node.ELEMENT_NODE) return true
+    if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) {
+      return Boolean(child.textContent)
+    }
+    return false
+  })
+  const pad = pretty ? '  '.repeat(depth) : ''
+
+  if (kids.length === 0) {
+    if (name.toLowerCase() === 'svg') {
+      return `${pad}<${name}${attrs}></${name}>`
+    }
+    return `${pad}<${name}${attrs}/>`
+  }
+
+  const onlyText =
+    kids.length === 1 &&
+    (kids[0]!.nodeType === Node.TEXT_NODE ||
+      kids[0]!.nodeType === Node.CDATA_SECTION_NODE)
+
+  if (onlyText) {
+    const body = escapeXml(kids[0]!.textContent ?? '')
+    return `${pad}<${name}${attrs}>${pretty ? body.trim() : body}</${name}>`
+  }
+
+  if (!pretty) {
+    return `<${name}${attrs}>${kids.map((child) => serializeNode(child, false, 0)).join('')}</${name}>`
+  }
+
+  const inner = kids
+    .map((child) => serializeNode(child, true, depth + 1))
+    .filter(Boolean)
+    .join('\n')
+  return `${pad}<${name}${attrs}>\n${inner}\n${pad}</${name}>`
+}
+
+/** Minify SVG: drop comments, editor attrs, extra whitespace, and extra decimals. */
+export function compressSvg(text: string) {
+  const root = parseSvgRoot(text)
+  pruneLayoutWhitespace(root)
+  compactSvgTree(root)
+  return serializeNode(root, false, 0)
+}
+
+/** Pretty-print SVG with 2-space indent. */
+export function formatSvg(text: string) {
+  const root = parseSvgRoot(text)
+  pruneLayoutWhitespace(root)
+  return serializeNode(root, true, 0)
+}
+
 export function downloadTextFile(content: string, filename: string) {
   const blob = new Blob([content], { type: 'image/svg+xml;charset=utf-8' })
   const url = URL.createObjectURL(blob)

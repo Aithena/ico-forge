@@ -3,8 +3,10 @@ import { Workbench } from '../components/Workbench'
 import { usePasteImage } from '../hooks/usePasteImage'
 import { formatBytes } from '../lib/pngBase64'
 import {
+  compressSvg,
   downloadTextFile,
   extractSvgMarkup,
+  formatSvg,
   isSvgFile,
   pngToSvg,
 } from '../lib/pngToSvg'
@@ -182,13 +184,46 @@ export default function PngSvgPage() {
     setStatus(`预览已就绪（${(svg.length / 1024).toFixed(1)} KB）`)
   }
 
+  function applyRewrittenSvg(next: string, label: string) {
+    const svg = extractSvgMarkup(next)
+    if (!svg) {
+      setError('没有找到可用的 SVG 代码')
+      return
+    }
+    const before = svgDraft.length
+    setSvgDraft(next)
+    setSvgText(svg)
+    setError(null)
+    setStatus(
+      `${label} ${formatBytes(before)} → ${formatBytes(next.length)}`,
+    )
+  }
+
+  function onCompressSvg() {
+    try {
+      applyRewrittenSvg(compressSvg(svgDraft || svgText || ''), '已压缩')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '压缩失败')
+    }
+  }
+
+  function onFormatSvg() {
+    try {
+      applyRewrittenSvg(formatSvg(svgDraft || svgText || ''), '已格式化')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '格式化失败')
+    }
+  }
+
   async function onConvert() {
     if (!svgText) return
     setError(null)
     const name = `${stemFromName(file?.name ?? 'icon')}.svg`
     downloadTextFile(svgText, name)
-    setStatus(`已保存 ${name}（${(svgText.length / 1024).toFixed(1)} KB）。`)
+    setStatus(`已保存 ${name}（${formatBytes(svgText.length)}）。`)
   }
+
+  const canRewrite = Boolean(extractSvgMarkup(svgDraft))
 
   return (
     <Workbench
@@ -285,8 +320,8 @@ export default function PngSvgPage() {
         )}
       </section>
 
-      <label className="wm-field svg-code-field" htmlFor={svgInputId}>
-        <span>SVG 代码</span>
+      <div className="wm-field svg-code-field">
+        <label htmlFor={svgInputId}>SVG 代码</label>
         <textarea
           id={svgInputId}
           value={svgDraft}
@@ -302,7 +337,25 @@ export default function PngSvgPage() {
           rows={8}
           spellCheck={false}
         />
-      </label>
+        <div className="svg-code-actions">
+          <button
+            type="button"
+            className="preview-btn"
+            disabled={!canRewrite}
+            onClick={onCompressSvg}
+          >
+            压缩
+          </button>
+          <button
+            type="button"
+            className="preview-btn"
+            disabled={!canRewrite}
+            onClick={onFormatSvg}
+          >
+            格式化
+          </button>
+        </div>
+      </div>
 
       {error && <p className="error">{error}</p>}
       {status && <p className="status">{status}</p>}
